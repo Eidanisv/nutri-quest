@@ -1,0 +1,65 @@
+@import "tailwindcss";
+
+/* Paleta: escala de cinzas + neon só onde importa (meta batida / alerta / ação). */
+@theme {
+  --color-bg: #08080a;
+  --color-surface: #101013;
+  --color-raised: #17171c;
+  --color-line: #25252d;
+  --color-dim: #8d8d9b; /* ≥ 5:1 sobre as superfícies (antes #6b6b78 ≈ 3,6:1) */
+  --color-text: #ececf1;
+  --color-neon: #39ff88;
+  --color-alert: #ff3b5c;
+  --color-cyan: #2de2ff;
+  --color-amber: #ffb830;
+  --font-mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+}
+
+html,
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* grão sutil lo-fi */
+  background-image: radial-gradient(
+    rgba(255, 255, 255, 0.035) 1px,
+    transparent 1px
+  );
+  background-size: 3px 3px;
+  overscroll-behavior-y: none;
+}
+
+.glow-neon {
+  box-shadow: 0 0 0 1px rgba(57, 255, 136, 0.35), 0 0 24px -6px rgba(57, 255, 136, 0.45);
+}
+.glow-alert {
+  box-shadow: 0 0 0 1px rgba(255, 59, 92, 0.4), 0 0 24px -6px rgba(255, 59, 92, 0.45);
+}
+
+button {
+  touch-action: manipulation;
+}
+
+/* Foco visível para teclado / leitores de tela */
+:focus-visible {
+  outline: 2px solid var(--color-neon);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  nav {
+    backdrop-filter: none !important;
+    background: var(--color-bg) !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

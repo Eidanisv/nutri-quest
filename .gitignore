@@ -1,0 +1,13 @@
+# dependências e builds
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+
+# segredos e dados pessoais: NUNCA commitar
+.env
+.env.*
+!.env.local.example
+*.log
+meus-dados/

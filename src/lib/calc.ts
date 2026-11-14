@@ -1,0 +1,311 @@
+import {
+  EMPTY_MACROS,
+  type DailyLog,
+  type FoodCategory,
+  type FoodItem,
+  type Macros,
+  type MealPlan,
+  type User,
+} from "./types";
+
+// ───────────── Motor metabólico ─────────────
+
+/** Taxa Metabólica Basal (kcal/dia). */
+export function calcBmr(u: User): number {
+  if (u.bmrFormula === "harris") {
+    // Harris-Benedict revisada (Roza & Shizgal, 1984)
+    return u.sex === "male"
+      ? 88.362 + 13.397 * u.weightKg + 4.799 * u.heightCm - 5.677 * u.age
+      : 447.593 + 9.247 * u.weightKg + 3.098 * u.heightCm - 4.33 * u.age;
+  }
+  // Mifflin-St Jeor (1990) — padrão
+  const base = 10 * u.weightKg + 6.25 * u.heightCm - 5 * u.age;
+  return base + (u.sex === "male" ? 5 : -161);
+}
+
+/** Gasto Energético Total (kcal/dia) = TMB × fator de atividade. */
+export function calcGet(u: User): number {
+  return calcBmr(u) * u.activityFactor;
+}
+
+// ───────────── Macros ─────────────
+
+export function macrosOf(food: FoodItem, quantity: number): Macros {
+  const k = quantity / food.baseAmount;
+  return {
+    kcal: food.macros.kcal * k,
+    protein: food.macros.protein * k,
+    carbs: food.macros.carbs * k,
+    fat: food.macros.fat * k,
+    fiber: food.macros.fiber * k,
+  };
+}
+
+export function sumMacros(list: Macros[]): Macros {
+  return list.reduce(
+    (a, m) => ({
+      kcal: a.kcal + m.kcal,
+      protein: a.protein + m.protein,
+      carbs: a.carbs + m.carbs,
+      fat: a.fat + m.fat,
+      fiber: a.fiber + m.fiber,
+    }),
+    { ...EMPTY_MACROS },
+  );
+}
+
+export type FoodMap = Record<string, FoodItem>;
+
+export function planTotals(plan: MealPlan, foods: FoodMap): Macros {
+  return sumMacros(
+    plan.meals.flatMap((m) =>
+      m.items.filter((i) => foods[i.foodId]).map((i) => macrosOf(foods[i.foodId], i.quantity)),
+    ),
+  );
+}
+
+export function consumedTotals(
+  plan: MealPlan,
+  foods: FoodMap,
+  checked: string[],
+): Macros {
+  const set = new Set(checked);
+  return sumMacros(
+    plan.meals.flatMap((m) =>
+      m.items
+        .filter((i) => set.has(i.id) && foods[i.foodId])
+        .map((i) => macrosOf(foods[i.foodId], i.quantity)),
+    ),
+  );
+}
+
+// ───────────── Datas (sempre locais, nunca UTC) ─────────────
+
+export function toDateKey(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+/** Segunda-feira da semana de `d`. */
+export function weekStart(d: Date): Date {
+  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const dow = (x.getDay() + 6) % 7; // seg=0 … dom=6
+  x.setDate(x.getDate() - dow);
+  return x;
+}
+
+export function weekDays(d: Date): Date[] {
+  const s = weekStart(d);
+  return Array.from({ length: 7 }, (_, i) => {
+    const x = new Date(s);
+    x.setDate(s.getDate() + i);
+    return x;
+  });
+}
+
+// ───────────── Semana ─────────────
+
+export interface WeekPoint {
+  date: string;
+  label: string;
+  consumed: number | null; // null = sem registro
+  get: number;
+  isToday: boolean;
+}
+
+const DOW = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
+
+export function buildWeek(
+  logs: Record<string, DailyLog>,
+  currentGet: number,
+  today: Date,
+): { points: WeekPoint[]; closedBalance: number; todayBalance: number } {
+  const todayKey = toDateKey(today);
+  let closed = 0;
+  let todayBal = 0;
+  const points = weekDays(today).map((d, i) => {
+    const key = toDateKey(d);
+    const log = logs[key];
+    const get = log?.getKcal ?? currentGet;
+    const consumed = log && log.consumed.kcal > 0 ? log.consumed.kcal : null;
+    if (consumed !== null) {
+      // saldo > 0 = déficit (gastou mais do que comeu)
+      if (key < todayKey) closed += get - consumed;
+      else if (key === todayKey) todayBal = get - consumed;
+    }
+    return { date: key, label: DOW[i], consumed, get, isToday: key === todayKey };
+  });
+  return { points, closedBalance: closed, todayBalance: todayBal };
+}
+
+// ───────────── Lista de compras ─────────────
+
+export interface ShoppingLine {
+  foodId: string;
+  name: string;
+  category: FoodCategory;
+  unit: FoodItem["unit"];
+  weekly: number;
+}
+
+export const CATEGORY_LABEL: Record<FoodCategory, string> = {
+  proteins: "Proteínas",
+  produce: "Hortifruti",
+  carbs: "Carboidratos",
+  dairy: "Laticínios",
+  fats: "Gorduras",
+  supplements: "Suplementos",
+  others: "Outros",
+};
+
+export const CATEGORY_ORDER: FoodCategory[] = [
+  "proteins",
+  "produce",
+  "carbs",
+  "dairy",
+  "fats",
+  "supplements",
+  "others",
+];
+
+/** Soma o plano diário por alimento e multiplica por `days` (7). */
+export function buildShoppingList(
+  plan: MealPlan,
+  foods: FoodMap,
+  days = 7,
+): Record<FoodCategory, ShoppingLine[]> {
+  const acc = new Map<string, number>();
+  for (const meal of plan.meals)
+    for (const it of meal.items)
+      acc.set(it.foodId, (acc.get(it.foodId) ?? 0) + it.quantity);
+
+  const out = {} as Record<FoodCategory, ShoppingLine[]>;
+  for (const c of CATEGORY_ORDER) out[c] = [];
+  for (const [foodId, daily] of acc) {
+    const f = foods[foodId];
+    if (!f) continue;
+    out[f.category].push({
+      foodId,
+      name: f.name,
+      category: f.category,
+      unit: f.unit,
+      weekly: daily * days,
+    });
+  }
+  for (const c of CATEGORY_ORDER)
+    out[c].sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  return out;
+}
+
+export function formatQty(q: number, unit: FoodItem["unit"]): string {
+  if (unit === "un") return `${Math.round(q)} un`;
+  if (q >= 1000)
+    return `${(q / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 2 })} ${unit === "g" ? "kg" : "L"}`;
+  return `${Math.round(q)} ${unit}`;
+}
+
+export const fmt = (n: number, digits = 0) =>
+  n.toLocaleString("pt-BR", {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  });
+
+// ───────────── Peso e calibração do GET ─────────────
+
+/** kcal por kg de peso corporal perdido/ganho (aproximação clássica). */
+export const KCAL_PER_KG = 7700;
+
+export interface WeightPoint {
+  date: string;
+  kg: number;
+  /** Média móvel dos últimos 7 dias (inclui o próprio dia). */
+  avg7: number;
+}
+
+const dayNumber = (key: string): number => {
+  const [y, m, d] = key.split("-").map(Number);
+  return Math.round(new Date(y, m - 1, d).getTime() / 86_400_000);
+};
+
+export function weightSeries(logs: Record<string, DailyLog>): WeightPoint[] {
+  const raw = Object.values(logs)
+    .filter((l) => l.weightKg !== undefined)
+    .map((l) => ({ date: l.date, kg: l.weightKg as number }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  return raw.map((p) => {
+    const n = dayNumber(p.date);
+    const win = raw.filter((q) => {
+      const dn = dayNumber(q.date);
+      return dn <= n && dn > n - 7;
+    });
+    return { ...p, avg7: win.reduce((a, q) => a + q.kg, 0) / win.length };
+  });
+}
+
+export type Calibration =
+  | { ok: false; reason: string }
+  | {
+      ok: true;
+      observedGet: number;
+      factor: number;
+      avgIntake: number;
+      slopeKgWeek: number;
+      days: number;
+      weighIns: number;
+    };
+
+/**
+ * GET observado = ingestão média − (variação diária de peso × 7700).
+ * A inclinação vem de regressão linear das pesagens (resiste a ruído de água).
+ * Só estima com dados suficientes; caso contrário diz o que falta.
+ */
+export function calibrate(
+  logs: Record<string, DailyLog>,
+  bmr: number,
+  today: Date,
+): Calibration {
+  const todayN = dayNumber(toDateKey(today));
+  const pts = weightSeries(logs).filter((p) => dayNumber(p.date) > todayN - 28);
+  if (pts.length < 4)
+    return { ok: false, reason: `Faltam pesagens: ${pts.length}/4 nos últimos 28 dias.` };
+
+  const first = dayNumber(pts[0].date);
+  const last = dayNumber(pts[pts.length - 1].date);
+  const days = last - first + 1;
+  if (days < 14)
+    return { ok: false, reason: `Janela curta: ${days}/14 dias entre a primeira e a última pesagem.` };
+
+  const intakeDays = Object.values(logs).filter((l) => {
+    const n = dayNumber(l.date);
+    return n >= first && n <= last && l.consumed.kcal > 0;
+  });
+  const coverage = intakeDays.length / days;
+  if (coverage < 0.7)
+    return {
+      ok: false,
+      reason: `Faltam registros de refeição: ${intakeDays.length}/${days} dias (precisa de 70%).`,
+    };
+
+  const xs = pts.map((p) => dayNumber(p.date) - first);
+  const ys = pts.map((p) => p.kg);
+  const mx = xs.reduce((a, b) => a + b, 0) / xs.length;
+  const my = ys.reduce((a, b) => a + b, 0) / ys.length;
+  const slope =
+    xs.reduce((a, x, i) => a + (x - mx) * (ys[i] - my), 0) /
+    xs.reduce((a, x) => a + (x - mx) ** 2, 0); // kg/dia
+
+  const avgIntake =
+    intakeDays.reduce((a, l) => a + l.consumed.kcal, 0) / intakeDays.length;
+  const observedGet = avgIntake - slope * KCAL_PER_KG;
+  return {
+    ok: true,
+    observedGet,
+    factor: observedGet / bmr,
+    avgIntake,
+    slopeKgWeek: slope * 7,
+    days,
+    weighIns: pts.length,
+  };
+}
