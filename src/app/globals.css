@@ -49,6 +49,9 @@
 }
 
 html,
+html {
+  overscroll-behavior-y: none;
+}
 body {
   background: var(--c-sup);
   color: var(--c-tx);

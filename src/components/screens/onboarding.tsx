@@ -2,6 +2,7 @@
 
 import { useState, type ReactNode } from "react";
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 import { calcBmr, calcGet, fmt } from "@/lib/calc";
 import { useNav } from "@/lib/nav";
 import { askNotificationPermission, usePrefs } from "@/lib/prefs";
@@ -53,7 +54,9 @@ function Step({ n, title, desc, onBack, children, actions }: { n: number; title:
 }
 
 type DietChoice = "manual" | "backup" | "pdf";
-const useOnb = create<{ step: number; diet: DietChoice }>(() => ({ step: 1, diet: "manual" }));
+const useOnb = create<{ step: number; diet: DietChoice }>()(
+  persist(() => ({ step: 1, diet: "manual" as DietChoice }), { name: "fuel-onb" }),
+);
 
 export function Onboarding() {
   const user = useStore((s) => s.user);
@@ -69,6 +72,7 @@ export function Onboarding() {
   const backup = useBackupImport({ confirmReplace: false });
 
   const finish = (goDiet: boolean) => {
+    useOnb.setState({ step: 1, diet: "manual" });
     update({ onboarded: true });
     if (goDiet) push({ id: "diet" });
   };
