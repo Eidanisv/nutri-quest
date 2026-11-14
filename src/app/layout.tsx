@@ -4,6 +4,8 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "FUEL — dieta, água e déficit",
   description: "Tracker pessoal de refeições, hidratação, compras e déficit calórico.",
+  // iPhone: abre em tela cheia, com o nome "FUEL", quando adicionado à tela inicial.
+  appleWebApp: { capable: true, title: "FUEL", statusBarStyle: "black" },
 };
 
 export const viewport: Viewport = {
