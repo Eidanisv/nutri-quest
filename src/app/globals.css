@@ -1,61 +1,100 @@
 @import "tailwindcss";
 
-/* Paleta: escala de cinzas + neon só onde importa (meta batida / alerta / ação). */
-@theme {
-  --color-bg: #08080a;
-  --color-surface: #101013;
-  --color-raised: #17171c;
-  --color-line: #25252d;
-  --color-dim: #8d8d9b; /* ≥ 5:1 sobre as superfícies (antes #6b6b78 ≈ 3,6:1) */
-  --color-text: #ececf1;
-  --color-neon: #39ff88;
-  --color-alert: #ff3b5c;
-  --color-cyan: #2de2ff;
-  --color-amber: #ffb830;
-  --font-mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+/*
+ * Design system: Apple (página "Design System Ref" do Figma App-Fuel).
+ * Cores do apple.com + extensões do app (ok / err / warn) para status.
+ * Claro por padrão; segue o modo escuro do aparelho.
+ */
+:root {
+  --c-bg: #ffffff;
+  --c-sup: #f5f5f7;
+  --c-tx: #1d1d1f;
+  --c-tx2: #6e6e73;
+  --c-bd: #e8e8ed;
+  --c-blue: #0071e3;
+  --c-link: #0066cc;
+  --c-ok: #248a3d;
+  --c-err: #d70015;
+  --c-warn: #b25000;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --c-bg: #000000;
+    --c-sup: #161617;
+    --c-tx: #f5f5f7;
+    --c-tx2: #86868b;
+    --c-bd: #272729;
+    --c-link: #2997ff;
+    --c-ok: #30d158;
+    --c-err: #ff453a;
+    --c-warn: #ff9f0a;
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --color-bg: var(--c-bg);
+  --color-sup: var(--c-sup);
+  --color-tx: var(--c-tx);
+  --color-tx2: var(--c-tx2);
+  --color-bd: var(--c-bd);
+  --color-blue: var(--c-blue);
+  --color-link: var(--c-link);
+  --color-ok: var(--c-ok);
+  --color-err: var(--c-err);
+  --color-warn: var(--c-warn);
+  --font-sans: var(--font-inter), system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --radius-card: 12px;
 }
 
 html,
 body {
-  background: var(--color-bg);
-  color: var(--color-text);
+  background: var(--c-sup);
+  color: var(--c-tx);
   -webkit-tap-highlight-color: transparent;
 }
-
 body {
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  /* grão sutil lo-fi */
-  background-image: radial-gradient(
-    rgba(255, 255, 255, 0.035) 1px,
-    transparent 1px
-  );
-  background-size: 3px 3px;
+  font-family: var(--font-sans);
   overscroll-behavior-y: none;
 }
-
-.glow-neon {
-  box-shadow: 0 0 0 1px rgba(57, 255, 136, 0.35), 0 0 24px -6px rgba(57, 255, 136, 0.45);
-}
-.glow-alert {
-  box-shadow: 0 0 0 1px rgba(255, 59, 92, 0.4), 0 0 24px -6px rgba(255, 59, 92, 0.45);
-}
-
 button {
   touch-action: manipulation;
+  font: inherit;
 }
-
-/* Foco visível para teclado / leitores de tela */
 :focus-visible {
-  outline: 2px solid var(--color-neon);
+  outline: 2px solid var(--c-blue);
   outline-offset: 2px;
 }
 
+/* Escala tipográfica do design system (Inter no lugar de SF Pro) */
+.t-hero { font-size: 56px; line-height: 1.07; font-weight: 600; letter-spacing: -0.005em; }
+.t-t40 { font-size: 40px; line-height: 1.1; font-weight: 600; letter-spacing: -0.003em; }
+.t-t28 { font-size: 28px; line-height: 1.14; font-weight: 600; letter-spacing: 0.007em; }
+.t-t21 { font-size: 21px; line-height: 1.19; font-weight: 600; letter-spacing: 0.011em; }
+.t-body { font-size: 17px; line-height: 1.24; letter-spacing: -0.022em; }
+.t-body-sb { font-size: 17px; line-height: 1.24; letter-spacing: -0.022em; font-weight: 600; }
+.t-small { font-size: 14px; line-height: 1.43; letter-spacing: -0.016em; }
+.t-small-sb { font-size: 14px; line-height: 1.43; letter-spacing: -0.016em; font-weight: 600; }
+.t-cap { font-size: 12px; line-height: 1.33; letter-spacing: -0.01em; }
+.t-cap-sb { font-size: 12px; line-height: 1.33; letter-spacing: -0.01em; font-weight: 600; }
+.tnum { font-variant-numeric: tabular-nums; }
+
+.material {
+  background: color-mix(in srgb, var(--c-bg) 80%, transparent);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+}
 @media (prefers-reduced-transparency: reduce) {
-  nav {
-    backdrop-filter: none !important;
-    background: var(--color-bg) !important;
+  .material {
+    background: var(--c-bg);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
   }
 }
+/* Campos: cinza sobre superfícies brancas (cartões, folhas, telas brancas); branco sobre o fundo cinza. */
+.ctx-white { --field: var(--c-sup); }
+.shadow-product { box-shadow: 3px 5px 30px rgba(0, 0, 0, 0.22); }
 
 @media (prefers-reduced-motion: reduce) {
   * {

@@ -309,3 +309,48 @@ export function calibrate(
     weighIns: pts.length,
   };
 }
+
+// ───────────── Progresso da calibração (para a tela explicar o que falta) ─────────────
+
+export interface CalibrationProgress {
+  weighIns: number; // pesagens nos últimos 28 dias
+  days: number; // dias entre a primeira e a última pesagem
+  coveragePct: number; // % de dias com refeição marcada nessa janela
+  needWeighIns: 4;
+  needDays: 14;
+  needCoveragePct: 70;
+}
+
+export function calibrationProgress(
+  logs: Record<string, DailyLog>,
+  today: Date,
+): CalibrationProgress {
+  const todayN = dayNumber(toDateKey(today));
+  const pts = weightSeries(logs).filter((p) => dayNumber(p.date) > todayN - 28);
+  const first = pts.length ? dayNumber(pts[0].date) : todayN;
+  const last = pts.length ? dayNumber(pts[pts.length - 1].date) : todayN;
+  const days = pts.length ? last - first + 1 : 0;
+  const intake = Object.values(logs).filter((l) => {
+    const n = dayNumber(l.date);
+    return n >= first && n <= last && l.consumed.kcal > 0;
+  }).length;
+  return {
+    weighIns: pts.length,
+    days,
+    coveragePct: days > 0 ? Math.round((intake / days) * 100) : 0,
+    needWeighIns: 4,
+    needDays: 14,
+    needCoveragePct: 70,
+  };
+}
+
+/** "9 a 15 de novembro" para a semana de `d`. */
+export function weekRangeLabel(d: Date): string {
+  const days = weekDays(d);
+  const a = days[0];
+  const b = days[6];
+  const mes = (x: Date) => x.toLocaleDateString("pt-BR", { month: "long" });
+  return a.getMonth() === b.getMonth()
+    ? `${a.getDate()} a ${b.getDate()} de ${mes(b)}`
+    : `${a.getDate()} de ${mes(a)} a ${b.getDate()} de ${mes(b)}`;
+}

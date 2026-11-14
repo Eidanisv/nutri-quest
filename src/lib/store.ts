@@ -24,10 +24,13 @@ interface State extends AppData {
   /** kg = null remove a pesagem do dia. */
   setWeight: (date: string, kg: number | null) => void;
   toggleShopping: (week: string, foodId: string) => void;
+  clearShopping: (week: string) => void;
+  /** Marca (ou desmarca) todos os itens de uma refeição de uma vez. */
+  setMealChecked: (date: string, mealId: string, checked: boolean) => void;
   updateUser: (patch: Partial<User>) => void;
 
   // Editor de dieta
-  addMeal: (name: string, time: string) => void;
+  addMeal: (name: string, time: string) => string;
   updateMeal: (mealId: string, patch: Partial<Pick<Meal, "name" | "time">>) => void;
   deleteMeal: (mealId: string) => void;
   addItem: (mealId: string, foodId: string, quantity: number) => void;
@@ -155,19 +158,45 @@ export const useStore = create<State>()(
           };
         }),
 
+      clearShopping: (week) => set((s) => ({ shopping: { ...s.shopping, [week]: [] } })),
+
+      setMealChecked: (date, mealId, checked) =>
+        set((s) => {
+          const meal = s.plan.meals.find((m) => m.id === mealId);
+          if (!meal) return {};
+          const log = blankLog(s, date);
+          const ids = new Set(meal.items.map((i) => i.id));
+          const rest = log.checkedItemIds.filter((i) => !ids.has(i));
+          const next = checked ? [...rest, ...ids] : rest;
+          return {
+            logs: {
+              ...s.logs,
+              [date]: {
+                ...log,
+                checkedItemIds: next,
+                consumed: consumedTotals(s.plan, foodMap(s.foods), next),
+                getKcal: calcGet(s.user),
+              },
+            },
+          };
+        }),
+
       updateUser: (patch) =>
         set((s) => {
           const user = { ...s.user, ...patch };
           return { user, logs: refreshToday({ ...s, user }) };
         }),
 
-      addMeal: (name, time) =>
+      addMeal: (name, time) => {
+        const id = uid();
         set((s) =>
           withPlan(s, {
             ...s.plan,
-            meals: [...s.plan.meals, { id: uid(), name, time, items: [] }].sort(byTime),
+            meals: [...s.plan.meals, { id, name, time, items: [] }].sort(byTime),
           }),
-        ),
+        );
+        return id;
+      },
 
       updateMeal: (mealId, patch) =>
         set((s) =>

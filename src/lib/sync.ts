@@ -61,8 +61,16 @@ interface SyncState {
   lastSyncAt: number | null;
   error: string | null;
   init: () => void;
+  /** true quando o usuário abriu o link de "esqueci a senha" e precisa definir uma nova. */
+  recovering: boolean;
   signIn: (email: string, password: string) => Promise<{ ok: boolean; message: string }>;
-  signUp: (email: string, password: string) => Promise<{ ok: boolean; message: string }>;
+  signUp: (
+    email: string,
+    password: string,
+  ) => Promise<{ ok: boolean; message: string; needsConfirm?: boolean }>;
+  resetPassword: (email: string) => Promise<{ ok: boolean; message: string }>;
+  updatePassword: (password: string) => Promise<{ ok: boolean; message: string }>;
+  resendConfirmation: (email: string) => Promise<{ ok: boolean; message: string }>;
   signOut: (wipeLocal?: boolean) => Promise<void>;
   syncNow: () => void;
   resolveConflict: (choice: "cloud" | "device") => Promise<void>;
@@ -271,14 +279,16 @@ export const useSync = create<SyncState>()((set, get) => {
     email: null,
     lastSyncAt: null,
     error: null,
+    recovering: false,
 
     init: () => {
       if (!syncConfigured || inited || typeof window === "undefined") return;
       inited = true;
       const sb = supabase()!;
       // O callback não pode chamar o Supabase direto (risco de deadlock): adia um tick.
-      sb.auth.onAuthStateChange((_event, session) => {
+      sb.auth.onAuthStateChange((event, session) => {
         setTimeout(() => {
+          if (event === "PASSWORD_RECOVERY") set({ recovering: true });
           if (session?.user) {
             if (userId !== session.user.id) void onSignedIn(session.user.id, session.user.email);
           } else {
@@ -307,8 +317,40 @@ export const useSync = create<SyncState>()((set, get) => {
       const { data, error } = await sb.auth.signUp({ email: email.trim(), password });
       if (error) return { ok: false, message: friendly(error) };
       if (!data.session)
-        return { ok: true, message: "Enviamos um e-mail de confirmação. Confirme e depois toque em “Entrar”." };
+        return {
+          ok: true,
+          needsConfirm: true,
+          message: "Enviamos um e-mail de confirmação. Confirme e depois toque em “Entrar”.",
+        };
       return { ok: true, message: "Conta criada e conectada." };
+    },
+
+    resetPassword: async (email) => {
+      const sb = supabase();
+      if (!sb) return { ok: false, message: "Sincronização não configurada." };
+      const redirectTo = `${window.location.origin}${process.env.NEXT_PUBLIC_BASE_PATH || ""}/`;
+      const { error } = await sb.auth.resetPasswordForEmail(email.trim(), { redirectTo });
+      return error
+        ? { ok: false, message: friendly(error) }
+        : { ok: true, message: "Se este e-mail tiver conta, enviamos o link para criar uma nova senha." };
+    },
+
+    updatePassword: async (password) => {
+      const sb = supabase();
+      if (!sb) return { ok: false, message: "Sincronização não configurada." };
+      const { error } = await sb.auth.updateUser({ password });
+      if (error) return { ok: false, message: friendly(error) };
+      set({ recovering: false });
+      return { ok: true, message: "Senha alterada." };
+    },
+
+    resendConfirmation: async (email) => {
+      const sb = supabase();
+      if (!sb) return { ok: false, message: "Sincronização não configurada." };
+      const { error } = await sb.auth.resend({ type: "signup", email: email.trim() });
+      return error
+        ? { ok: false, message: friendly(error) }
+        : { ok: true, message: "E-mail reenviado. Olhe também a caixa de spam." };
     },
 
     signOut: async (wipeLocal = false) => {
