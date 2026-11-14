@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import { create } from "zustand";
 import { calcBmr, calcGet, fmt } from "@/lib/calc";
 import { useNav } from "@/lib/nav";
 import { askNotificationPermission, usePrefs } from "@/lib/prefs";
@@ -52,14 +53,18 @@ function Step({ n, title, desc, onBack, children, actions }: { n: number; title:
 }
 
 type DietChoice = "manual" | "backup" | "pdf";
+const useOnb = create<{ step: number; diet: DietChoice }>(() => ({ step: 1, diet: "manual" }));
 
 export function Onboarding() {
   const user = useStore((s) => s.user);
   const update = useStore((s) => s.updateUser);
   const setPrefs = usePrefs((s) => s.set);
   const push = useNav((s) => s.push);
-  const [step, setStep] = useState(1);
-  const [diet, setDiet] = useState<DietChoice>("manual");
+  // passo e escolha ficam fora do componente: se a tela remontar, a pessoa continua de onde parou
+  const step = useOnb((s) => s.step);
+  const diet = useOnb((s) => s.diet);
+  const setStep = (f: (n: number) => number) => useOnb.setState((s) => ({ step: f(s.step) }));
+  const setDiet = (d: DietChoice) => useOnb.setState({ diet: d });
   const [perm, setPerm] = useState<string | null>(null);
   const backup = useBackupImport({ confirmReplace: false });
 

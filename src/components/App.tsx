@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { MotionConfig } from "framer-motion";
 import { useDialog } from "@/lib/dialog";
 import { useNav, type Screen, type Tab } from "@/lib/nav";
@@ -153,11 +153,19 @@ export function App() {
       });
   }, [status, email]);
 
+  // A tela de carregamento só vale para a primeira busca da conta. Sincronizações
+  // seguintes (a cada edição) não podem desmontar o onboarding e zerar o que a pessoa digitou.
+  const [settled, setSettled] = useState(false);
+  useEffect(() => {
+    if (status === "idle" || status === "error" || status === "conflict" || status === "unconfigured") setSettled(true);
+    else if (status === "signed-out") setSettled(false);
+  }, [status]);
+
   let content;
   if (!hydrated) content = <Loading />;
   else if (recovering) content = <AuthFlow initial="newpass" />;
   else if (!onboarded) {
-    if (status === "syncing") content = <Loading />; // buscando os dados da conta
+    if (status === "syncing" && !settled) content = <Loading />; // buscando os dados da conta
     else if (status === "signed-out" && !guest) content = <AuthFlow />;
     else content = <Onboarding />;
   } else content = <Shell />;
