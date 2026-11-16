@@ -7,7 +7,7 @@ import { haptic } from "@/lib/haptics";
 import { useNav } from "@/lib/nav";
 import { useStore } from "@/lib/store";
 import { useSync } from "@/lib/sync";
-import type { Meal } from "@/lib/types";
+import type { FoodItem, Macros, Meal, Swap } from "@/lib/types";
 import { ScoreCard, WorkoutCard } from "./workout";
 import {
   Avatar,
@@ -35,8 +35,10 @@ export function FoodRow({
   kcal,
   on,
   skipped = false,
+  swapped = false,
   onToggle,
   onSkip,
+  onSwap,
 }: {
   name: string;
   meta: string;
@@ -44,8 +46,11 @@ export function FoodRow({
   kcal: number;
   on: boolean;
   skipped?: boolean;
+  /** O que foi comido é diferente do previsto. */
+  swapped?: boolean;
   onToggle: () => void;
   onSkip?: () => void;
+  onSwap?: () => void;
 }) {
   return (
     <div className="flex items-stretch">
@@ -54,10 +59,17 @@ export function FoodRow({
         <span className="min-w-0 flex-1">
           <span className={`t-body block ${on || skipped ? "text-tx2" : ""} ${skipped ? "line-through" : ""}`}>{name}</span>
           <span className="t-small block text-tx2">{skipped ? "Não comi" : meta}</span>
-          {note && !skipped && <span className="t-cap mt-0.5 block text-link">↔ {note}</span>}
+          {note && !skipped && !swapped && <span className="t-cap mt-0.5 block text-link">↔ {note}</span>}
         </span>
         <span className={`t-small tnum text-tx2 ${skipped ? "line-through" : ""}`}>{fmt(kcal)}</span>
       </button>
+      {onSwap && (
+        <button onClick={onSwap} aria-pressed={swapped} aria-label={`${name}: comi outra coisa`} className="grid w-10 shrink-0 place-items-center active:bg-sup">
+          <span className={`grid size-[26px] place-items-center rounded-full ${swapped ? "bg-blue text-white" : "text-tx2"}`}>
+            <Icon name="swap" size={swapped ? 14 : 17} sw={2} />
+          </span>
+        </button>
+      )}
       {onSkip && (
         <button
           onClick={onSkip}
@@ -77,15 +89,23 @@ export function FoodRow({
 const itemMeta = (qty: string, m: { protein: number; carbs: number; fat: number }) =>
   `${qty} · P ${fmt(m.protein)} g · C ${fmt(m.carbs)} g · G ${fmt(m.fat)} g`;
 
+/** Nome, detalhe e kcal de uma linha: o que foi comido de verdade, se houve troca, ou o previsto. */
+function rowView(sw: Swap | undefined, food: FoodItem, qty: number, m: Macros) {
+  return sw
+    ? { name: sw.name, meta: `no lugar de ${food.name}`, kcal: sw.macros.kcal }
+    : { name: food.name, meta: itemMeta(formatQty(qty, food.unit), m), kcal: m.kcal };
+}
+
 function MealCard({ meal, isNext }: { meal: Meal; isNext: boolean }) {
   const d = useDay();
   const toggle = useStore((s) => s.toggleItem);
   const skip = useStore((s) => s.toggleSkipped);
   const push = useNav((s) => s.push);
+  const openSheet = useNav((s) => s.openSheet);
   const rows = meal.items.map((it) => ({ it, food: d.foods[it.foodId], m: macrosOf(d.foods[it.foodId], it.quantity) })).filter((r) => r.food);
   const planned = rows.reduce((a, r) => a + r.m.kcal, 0);
   const eaten = rows.filter((r) => d.checked.has(r.it.id));
-  const eatenKcal = eaten.reduce((a, r) => a + r.m.kcal, 0);
+  const eatenKcal = eaten.reduce((a, r) => a + (d.swaps?.[r.it.id]?.macros.kcal ?? r.m.kcal), 0);
   const skippedN = rows.filter((r) => d.skipped.has(r.it.id) && !d.checked.has(r.it.id)).length;
   const pending = rows.length - eaten.length - skippedN;
   const done = rows.length > 0 && pending === 0;
@@ -119,15 +139,22 @@ function MealCard({ meal, isNext }: { meal: Meal; isNext: boolean }) {
       </button>
       {open && (
         <div>
-          {rows.map(({ it, food, m }) => (
+          {rows.map(({ it, food, m }) => {
+            const v = rowView(d.swaps?.[it.id], food, it.quantity, m);
+            return (
             <div key={it.id} className="border-t border-bd">
               <FoodRow
-                name={food.name}
-                meta={itemMeta(formatQty(it.quantity, food.unit), m)}
+                name={v.name}
+                meta={v.meta}
                 note={it.note}
-                kcal={m.kcal}
+                kcal={v.kcal}
                 on={d.checked.has(it.id)}
                 skipped={d.skipped.has(it.id)}
+                swapped={Boolean(d.swaps?.[it.id])}
+                onSwap={() => {
+                  haptic(8);
+                  openSheet("swap", d.todayKey, it.id);
+                }}
                 onToggle={() => {
                   haptic(d.checked.has(it.id) ? 6 : 12);
                   toggle(d.todayKey, it.id);
@@ -138,7 +165,8 @@ function MealCard({ meal, isNext }: { meal: Meal; isNext: boolean }) {
                 }}
               />
             </div>
-          ))}
+            );
+          })}
           <button onClick={() => push({ id: "meal", mealId: meal.id })} className="t-small flex w-full items-center justify-between border-t border-bd px-4 py-3 text-link active:bg-sup">
             Ver detalhes da refeição
             <Icon name="cr" size={16} sw={2} />
@@ -372,6 +400,7 @@ export function MealDetailScreen({ mealId }: { mealId: string }) {
   const toggle = useStore((s) => s.toggleItem);
   const skip = useStore((s) => s.toggleSkipped);
   const skipMeal = useStore((s) => s.skipMeal);
+  const openSheet = useNav((s) => s.openSheet);
   const setMealChecked = useStore((s) => s.setMealChecked);
   const meal = d.plan.meals.find((m) => m.id === mealId);
   if (!meal) return null;
@@ -399,7 +428,7 @@ export function MealDetailScreen({ mealId }: { mealId: string }) {
       <div className="overflow-hidden rounded-xl bg-bg">
         {rows.map(({ it, food, m }, i) => (
           <div key={it.id} className={i ? "border-t border-bd" : ""}>
-            <FoodRow name={food.name} meta={itemMeta(formatQty(it.quantity, food.unit), m)} kcal={m.kcal} on={d.checked.has(it.id)} skipped={d.skipped.has(it.id)} onToggle={() => { haptic(10); toggle(d.todayKey, it.id); }} onSkip={() => { haptic(8); skip(d.todayKey, it.id); }} />
+            <FoodRow name={rowView(d.swaps?.[it.id], food, it.quantity, m).name} meta={rowView(d.swaps?.[it.id], food, it.quantity, m).meta} kcal={rowView(d.swaps?.[it.id], food, it.quantity, m).kcal} on={d.checked.has(it.id)} skipped={d.skipped.has(it.id)} swapped={Boolean(d.swaps?.[it.id])} onToggle={() => { haptic(10); toggle(d.todayKey, it.id); }} onSkip={() => { haptic(8); skip(d.todayKey, it.id); }} onSwap={() => { haptic(8); openSheet("swap", d.todayKey, it.id); }} />
           </div>
         ))}
         {rows.length === 0 && <p className="t-small p-4 text-center text-tx2">Esta refeição ainda não tem alimentos.</p>}

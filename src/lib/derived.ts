@@ -56,21 +56,22 @@ export function useDay() {
   /** item decidido = comi ou não comi */
   const resolved = useMemo(() => new Set([...(checkedIds ?? []), ...(skippedIds ?? [])]), [checkedIds, skippedIds]);
   const planned = useMemo(() => planTotals(plan, foods), [plan, foods]);
-  const consumed = useMemo(() => consumedTotals(plan, foods, checkedIds ?? []), [plan, foods, checkedIds]);
+  const swaps = log?.swaps;
+  const consumed = useMemo(() => consumedTotals(plan, foods, checkedIds ?? [], swaps), [plan, foods, checkedIds, swaps]);
   const workout = log?.workout;
   const get = calcDayGet(user, workout);
   const baseGet = calcDayBase(user);
   const trainKcal = workoutKcal(workout, user.weightKg);
   // Nota do dia inteiro: refeição que ainda não chegou conta como não comida, então a nota sobe ao longo do dia.
-  const score = useMemo(() => dietScore(plan, foods, checkedIds, skippedIds), [plan, foods, checkedIds, skippedIds]);
+  const score = useMemo(() => dietScore(plan, foods, checkedIds, skippedIds, undefined, swaps), [plan, foods, checkedIds, skippedIds, swaps]);
   // Nota "até agora": só as refeições cujo horário já passou (ou que já têm marcação).
   const scoreSoFar = useMemo(() => {
     const now = new Date();
-    return dietScore(plan, foods, checkedIds, skippedIds, now.getHours() * 60 + now.getMinutes());
-  }, [plan, foods, checkedIds, skippedIds]);
+    return dietScore(plan, foods, checkedIds, skippedIds, now.getHours() * 60 + now.getMinutes(), swaps);
+  }, [plan, foods, checkedIds, skippedIds, swaps]);
   const bmr = calcBmr(user);
   const nextMeal = plan.meals.find((m) => m.items.some((i) => !resolved.has(i.id)));
-  return { user, plan, logs, foods, today, todayKey, log, checked, skipped, resolved, planned, consumed, get, baseGet, trainKcal, workout, score, scoreSoFar, bmr, nextMeal };
+  return { user, plan, logs, foods, today, todayKey, log, checked, skipped, resolved, planned, consumed, get, baseGet, trainKcal, workout, swaps, score, scoreSoFar, bmr, nextMeal };
 }
 
 export const dateLabel = (d: Date) =>

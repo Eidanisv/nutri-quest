@@ -17,6 +17,7 @@ import { AboutScreen, ActivityScreen, ProfileEditScreen, ProfileScreen, Reminder
 import { ShoppingScreen } from "./screens/shopping";
 import { DietTabScreen, MealDetailScreen, TodayScreen, WaterSheet } from "./screens/today";
 import { CalibrationScreen, WeightScreen, WeightSheet } from "./screens/weight";
+import { SwapSheet } from "./screens/swap";
 import { WorkoutSheet } from "./screens/workout";
 import { WeekScreen } from "./screens/week";
 
@@ -119,6 +120,7 @@ function Shell() {
       <WaterSheet />
       <WeightSheet />
       <WorkoutSheet />
+      <SwapSheet />
     </>
   );
 }

@@ -18,7 +18,7 @@ export type Screen =
   | { id: "data" }
   | { id: "about" };
 
-export type SheetKey = "water" | "weight" | "workout" | null;
+export type SheetKey = "water" | "weight" | "workout" | "swap" | null;
 
 interface Nav {
   tab: Tab;
@@ -26,11 +26,13 @@ interface Nav {
   sheet: SheetKey;
   /** Dia (YYYY-MM-DD) a que a folha aberta se refere; vazio = hoje. */
   sheetDate: string | null;
+  /** Item do plano a que a folha de substituição se refere. */
+  sheetItem: string | null;
   setTab: (t: Tab) => void;
   push: (s: Screen) => void;
   pop: () => void;
   reset: () => void;
-  openSheet: (s: SheetKey, date?: string) => void;
+  openSheet: (s: SheetKey, date?: string, item?: string) => void;
 }
 
 /**
@@ -42,6 +44,7 @@ export const useNav = create<Nav>()((set, get) => ({
   stack: [],
   sheet: null,
   sheetDate: null,
+  sheetItem: null,
   setTab: (tab) => set({ tab, stack: [], sheet: null }),
   push: (s) => {
     if (typeof history !== "undefined") history.pushState({ fuel: get().stack.length + 1 }, "");
@@ -54,7 +57,7 @@ export const useNav = create<Nav>()((set, get) => ({
     else set((st) => ({ stack: st.stack.slice(0, -1) }));
   },
   reset: () => set({ tab: "today", stack: [], sheet: null }),
-  openSheet: (sheet, date) => set({ sheet, sheetDate: date ?? null }),
+  openSheet: (sheet, date, item) => set({ sheet, sheetDate: date ?? null, sheetItem: item ?? null }),
 }));
 
 if (typeof window !== "undefined") {

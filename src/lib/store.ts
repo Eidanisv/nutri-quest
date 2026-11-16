@@ -5,7 +5,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { calcDayGet, consumedTotals, dietScore, toDateKey, type FoodMap } from "./calc";
 import { DEFAULT_FOODS, DEFAULT_PLAN, DEFAULT_USER } from "./seed";
-import type { DailyLog, FoodItem, Meal, MealPlan, PlanItem, User, Workout } from "./types";
+import type { DailyLog, FoodItem, Meal, MealPlan, PlanItem, Swap, User, Workout } from "./types";
 
 /** Tudo o que é seu. É exatamente isto que vai para o arquivo de backup. */
 export interface AppData {
@@ -32,6 +32,8 @@ interface State extends AppData {
   toggleSkipped: (date: string, itemId: string) => void;
   /** Marca o treino do dia (null = não treinou). */
   setWorkout: (date: string, w: Workout | null) => void;
+  /** O que foi realmente comido no lugar do item do plano (null = voltar ao previsto). Marca o item como comido. */
+  setSwap: (date: string, itemId: string, swap: Swap | null) => void;
   /** Marca como "não comi" todos os itens da refeição que ainda não foram decididos. */
   skipMeal: (date: string, mealId: string) => void;
   updateUser: (patch: Partial<User>) => void;
@@ -61,8 +63,16 @@ export const uid = () =>
 
 const foodMap = (foods: FoodItem[]): FoodMap => Object.fromEntries(foods.map((f) => [f.id, f]));
 
-const scoreOf = (s: AppData, checked: string[], skipped: string[] | undefined): number | undefined =>
-  dietScore(s.plan, foodMap(s.foods), checked, skipped) ?? undefined;
+const scoreOf = (s: AppData, checked: string[], skipped: string[] | undefined, swaps?: Record<string, Swap>): number | undefined =>
+  dietScore(s.plan, foodMap(s.foods), checked, skipped, undefined, swaps) ?? undefined;
+
+/** Remove substituições de itens que deixaram de estar comidos. */
+const withoutSwaps = (swaps: Record<string, Swap> | undefined, ids: string[]): Record<string, Swap> | undefined => {
+  if (!swaps) return swaps;
+  const out = { ...swaps };
+  for (const i of ids) delete out[i];
+  return Object.keys(out).length ? out : undefined;
+};
 
 const byTime = (a: Meal, b: Meal) => a.time.localeCompare(b.time);
 
@@ -88,9 +98,9 @@ function refreshToday(s: AppData): Record<string, DailyLog> {
     ...s.logs,
     [key]: {
       ...log,
-      consumed: consumedTotals(s.plan, foodMap(s.foods), log.checkedItemIds),
+      consumed: consumedTotals(s.plan, foodMap(s.foods), log.checkedItemIds, log.swaps),
       getKcal: calcDayGet(s.user, log.workout),
-      score: scoreOf(s, log.checkedItemIds, log.skippedItemIds),
+      score: scoreOf(s, log.checkedItemIds, log.skippedItemIds, log.swaps),
     },
   };
 }
@@ -126,9 +136,11 @@ export const useStore = create<State>()(
                 ...log,
                 checkedItemIds: checked,
                 skippedItemIds: (log.skippedItemIds ?? []).filter((i) => i !== itemId),
-                consumed: consumedTotals(s.plan, foodMap(s.foods), checked),
+                // desmarcar um item trocado desfaz a troca
+                swaps: checked.includes(itemId) ? log.swaps : withoutSwaps(log.swaps, [itemId]),
+                consumed: consumedTotals(s.plan, foodMap(s.foods), checked, checked.includes(itemId) ? log.swaps : withoutSwaps(log.swaps, [itemId])),
                 getKcal: calcDayGet(s.user, log.workout),
-                score: scoreOf(s, checked, (log.skippedItemIds ?? []).filter((i) => i !== itemId)),
+                score: scoreOf(s, checked, (log.skippedItemIds ?? []).filter((i) => i !== itemId), checked.includes(itemId) ? log.swaps : withoutSwaps(log.swaps, [itemId])),
               },
             },
           };
@@ -190,9 +202,10 @@ export const useStore = create<State>()(
                 ...log,
                 checkedItemIds: next,
                 skippedItemIds: checked ? skipped : skipped.filter((i) => !ids.has(i)),
-                consumed: consumedTotals(s.plan, foodMap(s.foods), next),
+                swaps: checked ? log.swaps : withoutSwaps(log.swaps, [...ids]),
+                consumed: consumedTotals(s.plan, foodMap(s.foods), next, checked ? log.swaps : withoutSwaps(log.swaps, [...ids])),
                 getKcal: calcDayGet(s.user, log.workout),
-                score: scoreOf(s, next, checked ? skipped : skipped.filter((i) => !ids.has(i))),
+                score: scoreOf(s, next, checked ? skipped : skipped.filter((i) => !ids.has(i)), checked ? log.swaps : withoutSwaps(log.swaps, [...ids])),
               },
             },
           };
@@ -212,9 +225,10 @@ export const useStore = create<State>()(
                 ...log,
                 checkedItemIds: checked,
                 skippedItemIds: nextSkipped,
-                consumed: consumedTotals(s.plan, foodMap(s.foods), checked),
+                swaps: withoutSwaps(log.swaps, [itemId]),
+                consumed: consumedTotals(s.plan, foodMap(s.foods), checked, withoutSwaps(log.swaps, [itemId])),
                 getKcal: calcDayGet(s.user, log.workout),
-                score: scoreOf(s, checked, nextSkipped),
+                score: scoreOf(s, checked, nextSkipped, withoutSwaps(log.swaps, [itemId])),
               },
             },
           };
@@ -235,7 +249,29 @@ export const useStore = create<State>()(
                 ...log,
                 skippedItemIds: skipped,
                 getKcal: calcDayGet(s.user, log.workout),
-                score: scoreOf(s, log.checkedItemIds, skipped),
+                score: scoreOf(s, log.checkedItemIds, skipped, log.swaps),
+              },
+            },
+          };
+        }),
+
+      setSwap: (date, itemId, swap) =>
+        set((s) => {
+          const log = blankLog(s, date);
+          const checked = log.checkedItemIds.includes(itemId) ? log.checkedItemIds : [...log.checkedItemIds, itemId];
+          const skipped = (log.skippedItemIds ?? []).filter((i) => i !== itemId);
+          const swaps = swap ? { ...(log.swaps ?? {}), [itemId]: swap } : withoutSwaps(log.swaps, [itemId]);
+          return {
+            logs: {
+              ...s.logs,
+              [date]: {
+                ...log,
+                checkedItemIds: checked,
+                skippedItemIds: skipped,
+                swaps,
+                consumed: consumedTotals(s.plan, foodMap(s.foods), checked, swaps),
+                getKcal: calcDayGet(s.user, log.workout),
+                score: scoreOf(s, checked, skipped, swaps),
               },
             },
           };

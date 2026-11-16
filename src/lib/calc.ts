@@ -5,6 +5,7 @@ import {
   type FoodItem,
   type Macros,
   type MealPlan,
+  type Swap,
   type User,
   type Workout,
 } from "./types";
@@ -53,6 +54,7 @@ export const calcDayGet = (u: User, w: Workout | undefined | null): number => ca
  * 10 = comeu tudo o que está previsto; 1 = não fez a dieta.
  * Metade da nota vem das calorias comidas (pular o arroz pesa mais que pular a salada) e
  * metade de quantos itens foram comidos. Item "não comi" ou sem marcação não conta como comido.
+ * Item trocado por outra coisa conta como comido (calorias até o previsto).
  * `nowMins`: para o dia de hoje, só entram refeições que já passaram do horário (ou que já têm marcação).
  * Devolve null enquanto nada foi marcado (sem registro).
  */
@@ -62,6 +64,7 @@ export function dietScore(
   checkedIds: string[] | undefined,
   skippedIds: string[] | undefined,
   nowMins?: number,
+  swaps?: Record<string, Swap>,
 ): number | null {
   const checked = new Set(checkedIds ?? []);
   const decided = new Set([...(checkedIds ?? []), ...(skippedIds ?? [])]);
@@ -79,7 +82,9 @@ export function dietScore(
       nPlan += 1;
       if (decided.has(i.id)) any = true;
       if (checked.has(i.id)) {
-        kEat += k;
+        // item trocado: o item conta inteiro; as calorias contam até o que estava previsto
+        const sw = swaps?.[i.id];
+        kEat += sw ? (k > 0 ? Math.min(k, sw.macros.kcal) : k) : k;
         nEat += 1;
       }
     }
@@ -133,13 +138,14 @@ export function consumedTotals(
   plan: MealPlan,
   foods: FoodMap,
   checked: string[],
+  swaps?: Record<string, Swap>,
 ): Macros {
   const set = new Set(checked);
   return sumMacros(
     plan.meals.flatMap((m) =>
       m.items
-        .filter((i) => set.has(i.id) && foods[i.foodId])
-        .map((i) => macrosOf(foods[i.foodId], i.quantity)),
+        .filter((i) => set.has(i.id) && (swaps?.[i.id] || foods[i.foodId]))
+        .map((i) => swaps?.[i.id]?.macros ?? macrosOf(foods[i.foodId], i.quantity)),
     ),
   );
 }

@@ -95,6 +95,15 @@ export interface MealPlan {
   meals: Meal[];
 }
 
+/** O que a pessoa realmente comeu no lugar de um item do plano. */
+export interface Swap {
+  name: string;
+  /** Macros do que foi comido (do catálogo ou estimados). */
+  macros: Macros;
+  foodId?: string;
+  quantity?: number;
+}
+
 /** Treino do dia: só musculação, ou musculação + cardio (30 a 40 min). Ausente = não treinou. */
 export type Workout = "weights" | "weights_cardio";
 
@@ -106,6 +115,8 @@ export interface DailyLog {
   checkedItemIds: string[];
   /** ids dos PlanItem que a pessoa marcou como "não comi" (não contam como consumidos nem como pendentes) */
   skippedItemIds?: string[];
+  /** Substituições do dia, por id de item do plano. O item trocado conta como comido. */
+  swaps?: Record<string, Swap>;
   /** Treino marcado no dia (ausente = não treinou). */
   workout?: Workout;
   /** Nota da dieta do dia, de 1 a 10 (snapshot; ausente = sem marcação). */
