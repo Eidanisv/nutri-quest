@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { calcBmr, calcGet, consumedTotals, planTotals, toDateKey, type FoodMap } from "./calc";
+import { calcBmr, calcDayBase, calcDayGet, dietScore, consumedTotals, planTotals, toDateKey, workoutKcal, type FoodMap } from "./calc";
 import { useStore } from "./store";
 
 export function useFoodMap(): FoodMap {
@@ -57,10 +57,18 @@ export function useDay() {
   const resolved = useMemo(() => new Set([...(checkedIds ?? []), ...(skippedIds ?? [])]), [checkedIds, skippedIds]);
   const planned = useMemo(() => planTotals(plan, foods), [plan, foods]);
   const consumed = useMemo(() => consumedTotals(plan, foods, checkedIds ?? []), [plan, foods, checkedIds]);
-  const get = calcGet(user);
+  const workout = log?.workout;
+  const get = calcDayGet(user, workout);
+  const baseGet = calcDayBase(user);
+  const trainKcal = workoutKcal(workout, user.weightKg);
+  // Nota de hoje até agora: só entram as refeições que já passaram do horário ou já foram marcadas.
+  const score = useMemo(() => {
+    const now = new Date();
+    return dietScore(plan, foods, checkedIds, skippedIds, now.getHours() * 60 + now.getMinutes());
+  }, [plan, foods, checkedIds, skippedIds]);
   const bmr = calcBmr(user);
   const nextMeal = plan.meals.find((m) => m.items.some((i) => !resolved.has(i.id)));
-  return { user, plan, logs, foods, today, todayKey, log, checked, skipped, resolved, planned, consumed, get, bmr, nextMeal };
+  return { user, plan, logs, foods, today, todayKey, log, checked, skipped, resolved, planned, consumed, get, baseGet, trainKcal, workout, score, bmr, nextMeal };
 }
 
 export const dateLabel = (d: Date) =>

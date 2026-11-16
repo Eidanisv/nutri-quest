@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { calcGet, consumedTotals, toDateKey, type FoodMap } from "./calc";
+import { calcDayGet, consumedTotals, dietScore, toDateKey, type FoodMap } from "./calc";
 import { DEFAULT_FOODS, DEFAULT_PLAN, DEFAULT_USER } from "./seed";
-import type { DailyLog, FoodItem, Meal, MealPlan, PlanItem, User } from "./types";
+import type { DailyLog, FoodItem, Meal, MealPlan, PlanItem, User, Workout } from "./types";
 
 /** Tudo o que é seu. É exatamente isto que vai para o arquivo de backup. */
 export interface AppData {
@@ -30,6 +30,8 @@ interface State extends AppData {
   setMealChecked: (date: string, mealId: string, checked: boolean) => void;
   /** Alterna "não comi" em um item (desmarca o "comi" dele). */
   toggleSkipped: (date: string, itemId: string) => void;
+  /** Marca o treino do dia (null = não treinou). */
+  setWorkout: (date: string, w: Workout | null) => void;
   /** Marca como "não comi" todos os itens da refeição que ainda não foram decididos. */
   skipMeal: (date: string, mealId: string) => void;
   updateUser: (patch: Partial<User>) => void;
@@ -59,6 +61,9 @@ export const uid = () =>
 
 const foodMap = (foods: FoodItem[]): FoodMap => Object.fromEntries(foods.map((f) => [f.id, f]));
 
+const scoreOf = (s: AppData, checked: string[], skipped: string[] | undefined): number | undefined =>
+  dietScore(s.plan, foodMap(s.foods), checked, skipped) ?? undefined;
+
 const byTime = (a: Meal, b: Meal) => a.time.localeCompare(b.time);
 
 function blankLog(s: AppData, date: string): DailyLog {
@@ -69,7 +74,7 @@ function blankLog(s: AppData, date: string): DailyLog {
       checkedItemIds: [],
       waterMl: 0,
       consumed: { kcal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 },
-      getKcal: calcGet(s.user),
+      getKcal: calcDayGet(s.user, undefined),
     }
   );
 }
@@ -84,7 +89,8 @@ function refreshToday(s: AppData): Record<string, DailyLog> {
     [key]: {
       ...log,
       consumed: consumedTotals(s.plan, foodMap(s.foods), log.checkedItemIds),
-      getKcal: calcGet(s.user),
+      getKcal: calcDayGet(s.user, log.workout),
+      score: scoreOf(s, log.checkedItemIds, log.skippedItemIds),
     },
   };
 }
@@ -121,7 +127,8 @@ export const useStore = create<State>()(
                 checkedItemIds: checked,
                 skippedItemIds: (log.skippedItemIds ?? []).filter((i) => i !== itemId),
                 consumed: consumedTotals(s.plan, foodMap(s.foods), checked),
-                getKcal: calcGet(s.user),
+                getKcal: calcDayGet(s.user, log.workout),
+                score: scoreOf(s, checked, (log.skippedItemIds ?? []).filter((i) => i !== itemId)),
               },
             },
           };
@@ -184,7 +191,8 @@ export const useStore = create<State>()(
                 checkedItemIds: next,
                 skippedItemIds: checked ? skipped : skipped.filter((i) => !ids.has(i)),
                 consumed: consumedTotals(s.plan, foodMap(s.foods), next),
-                getKcal: calcGet(s.user),
+                getKcal: calcDayGet(s.user, log.workout),
+                score: scoreOf(s, next, checked ? skipped : skipped.filter((i) => !ids.has(i))),
               },
             },
           };
@@ -205,7 +213,8 @@ export const useStore = create<State>()(
                 checkedItemIds: checked,
                 skippedItemIds: nextSkipped,
                 consumed: consumedTotals(s.plan, foodMap(s.foods), checked),
-                getKcal: calcGet(s.user),
+                getKcal: calcDayGet(s.user, log.workout),
+                score: scoreOf(s, checked, nextSkipped),
               },
             },
           };
@@ -218,12 +227,27 @@ export const useStore = create<State>()(
           const log = blankLog(s, date);
           const done = new Set([...log.checkedItemIds, ...(log.skippedItemIds ?? [])]);
           const add = meal.items.map((i) => i.id).filter((i) => !done.has(i));
+          const skipped = [...(log.skippedItemIds ?? []), ...add];
           return {
             logs: {
               ...s.logs,
-              [date]: { ...log, skippedItemIds: [...(log.skippedItemIds ?? []), ...add], getKcal: calcGet(s.user) },
+              [date]: {
+                ...log,
+                skippedItemIds: skipped,
+                getKcal: calcDayGet(s.user, log.workout),
+                score: scoreOf(s, log.checkedItemIds, skipped),
+              },
             },
           };
+        }),
+
+      setWorkout: (date, w) =>
+        set((s) => {
+          const log = { ...blankLog(s, date) };
+          if (w === null) delete log.workout;
+          else log.workout = w;
+          log.getKcal = calcDayGet(s.user, w);
+          return { logs: { ...s.logs, [date]: log } };
         }),
 
       updateUser: (patch) =>

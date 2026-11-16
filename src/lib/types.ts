@@ -95,6 +95,9 @@ export interface MealPlan {
   meals: Meal[];
 }
 
+/** Treino do dia: só musculação, ou musculação + cardio (30 a 40 min). Ausente = não treinou. */
+export type Workout = "weights" | "weights_cardio";
+
 export interface DailyLog {
   /** YYYY-MM-DD (data local) */
   date: string;
@@ -103,6 +106,10 @@ export interface DailyLog {
   checkedItemIds: string[];
   /** ids dos PlanItem que a pessoa marcou como "não comi" (não contam como consumidos nem como pendentes) */
   skippedItemIds?: string[];
+  /** Treino marcado no dia (ausente = não treinou). */
+  workout?: Workout;
+  /** Nota da dieta do dia, de 1 a 10 (snapshot; ausente = sem marcação). */
+  score?: number;
   waterMl: number;
   /** Pesagem do dia (jejum), se houver. */
   weightKg?: number;

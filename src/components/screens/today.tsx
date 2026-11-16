@@ -8,6 +8,7 @@ import { useNav } from "@/lib/nav";
 import { useStore } from "@/lib/store";
 import { useSync } from "@/lib/sync";
 import type { Meal } from "@/lib/types";
+import { ScoreCard, WorkoutCard } from "./workout";
 import {
   Avatar,
   Banner,
@@ -284,6 +285,9 @@ export function TodayScreen() {
           )}
         </>
       )}
+
+      {!emptyDiet && <ScoreCard score={d.score} />}
+      <WorkoutCard />
 
       <Card className="grid gap-3">
         <button onClick={() => openSheet("water")} className="flex items-end justify-between text-left" aria-label="Abrir registro de água">

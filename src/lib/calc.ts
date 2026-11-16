@@ -6,6 +6,7 @@ import {
   type Macros,
   type MealPlan,
   type User,
+  type Workout,
 } from "./types";
 
 // ───────────── Motor metabólico ─────────────
@@ -27,6 +28,70 @@ export function calcBmr(u: User): number {
 export function calcGet(u: User): number {
   return calcBmr(u) * u.activityFactor;
 }
+
+/**
+ * Gasto do dia a dia SEM treino. O fator de atividade que a pessoa escolheu já inclui o
+ * treino médio da semana; aqui tiramos essa parte (0,2) e a devolvemos só nos dias em que
+ * ela treinou. Nunca abaixo de 1,2 (sedentário).
+ */
+export const TRAINING_SHARE = 0.2;
+export const baseFactor = (u: User): number => Math.max(1.2, u.activityFactor - TRAINING_SHARE);
+
+/** kcal extras do treino (acima do repouso), proporcionais ao peso: musculação ≈ 4,0 × kg; com cardio de ~35 min ≈ 7,5 × kg. */
+export const WORKOUT_KCAL_PER_KG: Record<Workout, number> = { weights: 4, weights_cardio: 7.5 };
+export const WORKOUT_LABEL: Record<Workout, string> = { weights: "Só musculação", weights_cardio: "Musculação + cardio" };
+export const workoutKcal = (w: Workout | undefined | null, weightKg: number): number =>
+  w ? Math.round(weightKg * WORKOUT_KCAL_PER_KG[w]) : 0;
+
+/** Gasto total do dia = TMB × fator do dia a dia + kcal do treino marcado. */
+export const calcDayBase = (u: User): number => calcBmr(u) * baseFactor(u);
+export const calcDayGet = (u: User, w: Workout | undefined | null): number => calcDayBase(u) + workoutKcal(w, u.weightKg);
+
+// ───────────── Nota da dieta (1 a 10) ─────────────
+
+/**
+ * 10 = comeu tudo o que está previsto; 1 = não fez a dieta.
+ * Metade da nota vem das calorias comidas (pular o arroz pesa mais que pular a salada) e
+ * metade de quantos itens foram comidos. Item "não comi" ou sem marcação não conta como comido.
+ * `nowMins`: para o dia de hoje, só entram refeições que já passaram do horário (ou que já têm marcação).
+ * Devolve null enquanto nada foi marcado (sem registro).
+ */
+export function dietScore(
+  plan: MealPlan,
+  foods: FoodMap,
+  checkedIds: string[] | undefined,
+  skippedIds: string[] | undefined,
+  nowMins?: number,
+): number | null {
+  const checked = new Set(checkedIds ?? []);
+  const decided = new Set([...(checkedIds ?? []), ...(skippedIds ?? [])]);
+  let kPlan = 0, kEat = 0, nPlan = 0, nEat = 0, any = false;
+  for (const m of plan.meals) {
+    const [h, mm] = m.time.split(":").map(Number);
+    const started = nowMins === undefined || h * 60 + mm <= nowMins;
+    const touched = m.items.some((i) => decided.has(i.id));
+    if (!started && !touched) continue;
+    for (const i of m.items) {
+      const f = foods[i.foodId];
+      if (!f) continue;
+      const k = macrosOf(f, i.quantity).kcal;
+      kPlan += k;
+      nPlan += 1;
+      if (decided.has(i.id)) any = true;
+      if (checked.has(i.id)) {
+        kEat += k;
+        nEat += 1;
+      }
+    }
+  }
+  if (!any || nPlan === 0) return null;
+  const share = 0.5 * (kPlan > 0 ? kEat / kPlan : nEat / nPlan) + 0.5 * (nEat / nPlan);
+  return Math.round((1 + 9 * share) * 10) / 10;
+}
+
+export const scoreTone = (s: number): "ok" | "warn" | "err" => (s >= 8 ? "ok" : s >= 5 ? "warn" : "err");
+export const scoreLabel = (s: number): string =>
+  s >= 9.5 ? "Dieta perfeita" : s >= 8 ? "Muito bem" : s >= 6.5 ? "Bom, dá para melhorar" : s >= 5 ? "Regular" : "Fraco";
 
 // ───────────── Macros ─────────────
 
@@ -113,6 +178,8 @@ export interface WeekPoint {
   consumed: number | null; // null = sem registro
   get: number;
   isToday: boolean;
+  workout?: Workout;
+  score: number | null;
 }
 
 const DOW = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
@@ -135,7 +202,7 @@ export function buildWeek(
       if (key < todayKey) closed += get - consumed;
       else if (key === todayKey) todayBal = get - consumed;
     }
-    return { date: key, label: DOW[i], consumed, get, isToday: key === todayKey };
+    return { date: key, label: DOW[i], consumed, get, isToday: key === todayKey, workout: log?.workout, score: log?.score ?? null };
   });
   return { points, closedBalance: closed, todayBalance: todayBal };
 }
@@ -353,4 +420,77 @@ export function weekRangeLabel(d: Date): string {
   return a.getMonth() === b.getMonth()
     ? `${a.getDate()} a ${b.getDate()} de ${mes(b)}`
     : `${a.getDate()} de ${mes(a)} a ${b.getDate()} de ${mes(b)}`;
+}
+
+
+// ───────────── Peso por semana e por mês ─────────────
+
+export interface WeightPeriod {
+  key: string; // início da semana (YYYY-MM-DD) ou mês (YYYY-MM)
+  label: string;
+  avg: number;
+  n: number;
+  /** Variação em relação ao período anterior com pesagem (null no primeiro). */
+  delta: number | null;
+}
+
+const MES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+
+function periods(
+  logs: Record<string, DailyLog>,
+  keyOf: (date: string) => string,
+  labelOf: (key: string) => string,
+  last: number,
+): WeightPeriod[] {
+  const g = new Map<string, number[]>();
+  for (const l of Object.values(logs)) {
+    if (l.weightKg === undefined) continue;
+    const k = keyOf(l.date);
+    g.set(k, [...(g.get(k) ?? []), l.weightKg]);
+  }
+  const rows = [...g.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([key, v]) => ({ key, label: labelOf(key), avg: v.reduce((a, b) => a + b, 0) / v.length, n: v.length }));
+  return rows.map((r, i) => ({ ...r, delta: i ? r.avg - rows[i - 1].avg : null })).slice(-last);
+}
+
+const parseKey = (key: string) => {
+  const [y, m, d] = key.split("-").map(Number);
+  return new Date(y, m - 1, d || 1);
+};
+
+/** Média das pesagens por semana (seg a dom). */
+export const weeklyWeights = (logs: Record<string, DailyLog>, last = 5): WeightPeriod[] =>
+  periods(
+    logs,
+    (d) => toDateKey(weekStart(parseKey(d))),
+    (k) => {
+      const a = parseKey(k);
+      const b = new Date(a.getFullYear(), a.getMonth(), a.getDate() + 6);
+      return a.getMonth() === b.getMonth()
+        ? `${a.getDate()} a ${b.getDate()} ${MES[b.getMonth()]}`
+        : `${a.getDate()} ${MES[a.getMonth()]} a ${b.getDate()} ${MES[b.getMonth()]}`;
+    },
+    last,
+  );
+
+/** Média das pesagens por mês. */
+export const monthlyWeights = (logs: Record<string, DailyLog>, last = 6): WeightPeriod[] =>
+  periods(logs, (d) => d.slice(0, 7), (k) => MES[Number(k.slice(5, 7)) - 1], last);
+
+/** Déficit estimado (gasto − comido) nos dias fechados de [from, to], em kcal. */
+export function deficitBetween(
+  logs: Record<string, DailyLog>,
+  fromKey: string,
+  toKey: string,
+  todayKey: string,
+): { kcal: number; days: number } {
+  let kcal = 0,
+    days = 0;
+  for (const l of Object.values(logs)) {
+    if (l.date < fromKey || l.date > toKey || l.date >= todayKey || l.consumed.kcal <= 0) continue;
+    kcal += l.getKcal - l.consumed.kcal;
+    days += 1;
+  }
+  return { kcal, days };
 }

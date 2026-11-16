@@ -17,6 +17,7 @@ import { AboutScreen, ActivityScreen, ProfileEditScreen, ProfileScreen, Reminder
 import { ShoppingScreen } from "./screens/shopping";
 import { MealDetailScreen, TodayScreen, WaterSheet } from "./screens/today";
 import { CalibrationScreen, WeightScreen, WeightSheet } from "./screens/weight";
+import { WorkoutSheet } from "./screens/workout";
 import { WeekScreen } from "./screens/week";
 
 const TABS: { id: Tab; label: string; icon: IconName }[] = [
@@ -114,6 +115,7 @@ function Shell() {
       {!top && <TabBar />}
       <WaterSheet />
       <WeightSheet />
+      <WorkoutSheet />
     </>
   );
 }

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { calibrate, calibrationProgress, fmt, toDateKey, weightSeries } from "@/lib/calc";
+import { KCAL_PER_KG, calibrate, calibrationProgress, deficitBetween, fmt, monthlyWeights, toDateKey, weeklyWeights, weightSeries, type WeightPeriod } from "@/lib/calc";
 import { useDay } from "@/lib/derived";
 import { haptic } from "@/lib/haptics";
 import { useNav } from "@/lib/nav";
@@ -21,25 +21,149 @@ const shiftKey = (key: string, days: number) => {
   return toDateKey(new Date(y, m - 1, dd + days));
 };
 
-type Range = "7" | "30" | "90";
+type View = "weeks" | "months";
 
-function WTip({ active, payload }: { active?: boolean; payload?: { payload: { date: string; kg: number; avg7: number } }[] }) {
+function PTip({ active, payload }: { active?: boolean; payload?: { payload: WeightPeriod }[] }) {
   if (!active || !payload?.length) return null;
   const p = payload[0].payload;
   return (
     <div className="rounded-xl bg-bg px-3 py-2 shadow-product">
-      <p className="t-body-sb tnum">{kgs(p.kg)}</p>
+      <p className="t-body-sb tnum">{kgs(p.avg)}</p>
       <p className="t-cap text-tx2">
-        {shortDate(p.date)} · média 7 dias {kgs(p.avg7)}
+        {p.label} · {p.n} {p.n === 1 ? "pesagem" : "pesagens"}
       </p>
     </div>
+  );
+}
+
+/** Evolução do peso por semana ou por mês, com o que o déficit previa contra o que a balança mostrou. */
+function Evolution({ logs, todayKey }: { logs: ReturnType<typeof useDay>["logs"]; todayKey: string }) {
+  const [view, setView] = useState<View>("weeks");
+  const weeks = useMemo(() => weeklyWeights(logs, 5), [logs]);
+  const months = useMemo(() => monthlyWeights(logs, 6), [logs]);
+  const rows = view === "weeks" ? weeks : months;
+  const unit = view === "weeks" ? "semana" : "mês";
+  const first = rows[0];
+  const last = rows.at(-1);
+  const total = first && last && rows.length > 1 ? last.avg - first.avg : null;
+  const perPeriod = total !== null ? total / (rows.length - 1) : null;
+  const avgs = rows.map((r) => r.avg);
+  const yMin = avgs.length ? Math.floor(Math.min(...avgs) - 0.5) : 0;
+  const yMax = avgs.length ? Math.ceil(Math.max(...avgs) + 0.5) : 1;
+  const maxAbs = Math.max(0.1, ...rows.map((r) => Math.abs(r.delta ?? 0)));
+
+  // déficit estimado × balança (só na visão por semana)
+  let est: { kcal: number; days: number } | null = null;
+  if (view === "weeks" && first && last && rows.length > 1) {
+    const [y, m, dd] = last.key.split("-").map(Number);
+    est = deficitBetween(logs, first.key, toDateKey(new Date(y, m - 1, dd + 6)), todayKey);
+    if (est.days < 3) est = null;
+  }
+
+  return (
+    <>
+      <Segmented<View> label="Período" value={view} onChange={setView} options={[{ id: "weeks", label: "Semanas" }, { id: "months", label: "Meses" }]} />
+
+      {total === null ? (
+        <Card className="grid gap-1 py-8 text-center">
+          <p className="t-body-sb">{view === "weeks" ? "A evolução semanal aparece com 2 semanas de pesagem" : "A evolução mensal aparece com 2 meses de pesagem"}</p>
+          <p className="t-small text-tx2">Pese-se de manhã, em jejum, 2 a 3 vezes por semana. O app usa a média de cada {unit}.</p>
+        </Card>
+      ) : (
+        <>
+          <Card className="grid gap-2 p-5">
+            <p className="t-cap-sb tracking-wide text-tx2 uppercase">
+              {view === "weeks" ? `Últimas ${rows.length} semanas` : `Últimos ${rows.length} meses`}
+            </p>
+            <p className={`t-hero tnum ${total <= 0 ? "text-ok" : "text-err"}`}>
+              {total <= 0 ? "−" : "+"}
+              {fmt(Math.abs(total), 1)} <span className="t-t28 text-tx2">kg</span>
+            </p>
+            <p className="t-body text-tx2">
+              A média {view === "weeks" ? "semanal" : "mensal"} foi de {fmt(first.avg, 1)} para {fmt(last!.avg, 1)} kg.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Chip tone={perPeriod! <= 0 ? "ok" : "err"}>
+                {perPeriod! <= 0 ? "−" : "+"}
+                {fmt(Math.abs(perPeriod!), 1)} kg por {unit}
+              </Chip>
+              {last!.delta !== null && (
+                <Chip>
+                  {view === "weeks" ? "Última semana" : "Último mês"} {signed(last!.delta)}
+                </Chip>
+              )}
+            </div>
+          </Card>
+
+          <Card className="grid gap-3">
+            <h2 className="t-t21">Peso médio por {unit}</h2>
+            <div className="h-48" role="img" aria-label={`Peso médio por ${unit}`}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={rows} margin={{ top: 12, right: 12, left: -12, bottom: 0 }}>
+                  <CartesianGrid stroke="var(--c-bd)" vertical={false} />
+                  <XAxis dataKey="label" tickLine={false} axisLine={false} tick={TICK} interval={0} tickFormatter={(v: string) => (view === "weeks" ? v.split(" a ")[0] : v)} />
+                  <YAxis tickLine={false} axisLine={false} domain={[yMin, yMax]} allowDecimals={false} tick={TICK} width={40} />
+                  <Tooltip cursor={{ stroke: "var(--c-tx2)", strokeOpacity: 0.4 }} content={<PTip />} />
+                  <Line dataKey="avg" stroke="var(--c-blue)" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" dot={{ r: 4, fill: "var(--c-bg)", stroke: "var(--c-blue)", strokeWidth: 2.5 }} activeDot={{ r: 5, fill: "var(--c-blue)" }} isAnimationActive={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </Card>
+
+          <Group>
+            <div className="t-t21 px-4 pt-3.5 pb-2.5">Variação por {unit}</div>
+            {[...rows].reverse().map((r, i) => (
+              <div key={r.key} className="flex items-center gap-3 px-4 py-3">
+                <span className="w-[108px] shrink-0">
+                  <span className={`block ${i === 0 ? "t-body-sb" : "t-body"}`}>{r.label}</span>
+                  {i === 0 && <span className="t-cap text-tx2">mais recente</span>}
+                </span>
+                <span className="h-2 flex-1 overflow-hidden rounded-full bg-bd/50">
+                  {r.delta !== null && <span className={`block h-full rounded-full ${r.delta <= 0 ? "bg-ok" : "bg-err"}`} style={{ width: `${Math.max(6, (Math.abs(r.delta) / maxAbs) * 100)}%` }} />}
+                </span>
+                <span className={`t-small-sb tnum w-[68px] text-right ${r.delta === null ? "text-tx2" : r.delta <= 0 ? "text-ok" : "text-err"}`}>{r.delta === null ? "—" : signed(r.delta)}</span>
+              </div>
+            ))}
+          </Group>
+
+          {est && (
+            <Card className="grid gap-2.5">
+              <div>
+                <h2 className="t-t21">Déficit × balança</h2>
+                <p className="t-small text-tx2">Nas últimas {rows.length} semanas, só dias com refeições marcadas</p>
+              </div>
+              <div className="h-px bg-bd" />
+              <div className="flex items-center justify-between gap-3">
+                <span>
+                  <span className="t-body block">Déficit calórico</span>
+                  <span className="t-cap text-tx2">{fmt(est.kcal)} kcal em {est.days} dias</span>
+                </span>
+                <span className="t-body-sb text-link tnum">
+                  ≈ {est.kcal >= 0 ? "−" : "+"}
+                  {fmt(Math.abs(est.kcal) / KCAL_PER_KG, 1)} kg
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-3">
+                <span>
+                  <span className="t-body block">Balança (média semanal)</span>
+                  <span className="t-cap text-tx2">
+                    {fmt(first.avg, 1)} → {fmt(last!.avg, 1)} kg
+                  </span>
+                </span>
+                <span className={`t-body-sb tnum ${total <= 0 ? "text-ok" : "text-err"}`}>{signed(total)}</span>
+              </div>
+              <Banner>Se a balança acompanha o déficit, o gasto está certo. Variações de até 1 kg entre semanas são normais (água, sal, ciclo).</Banner>
+            </Card>
+          )}
+        </>
+      )}
+    </>
   );
 }
 
 export function WeightScreen() {
   const d = useDay();
   const { push, openSheet } = useNav();
-  const [range, setRange] = useState<Range>("30");
   const series = useMemo(() => weightSeries(d.logs), [d.logs]);
   const prog = useMemo(() => calibrationProgress(d.logs, d.today), [d.logs, d.today]);
 
@@ -48,10 +172,6 @@ export function WeightScreen() {
   const delta = last && prev ? last.kg - prev.kg : null;
   const weekAgo = series.find((p) => p.date >= shiftKey(d.todayKey, -7));
   const delta7 = last && weekAgo && weekAgo.date !== last.date ? last.kg - weekAgo.kg : null;
-  const visible = series.filter((p) => p.date >= shiftKey(d.todayKey, -Number(range)));
-  const lows = visible.map((p) => p.kg);
-  const yMin = lows.length ? Math.floor(Math.min(...lows) - 1) : 90;
-  const yMax = lows.length ? Math.ceil(Math.max(...lows) + 1) : 100;
   const recent = [...series].reverse().slice(0, 7);
   const hasToday = d.log?.weightKg !== undefined;
 
@@ -74,24 +194,7 @@ export function WeightScreen() {
         </Button>
       </Card>
 
-      <Card className="grid gap-3">
-        <Segmented<Range> label="Período" value={range} onChange={setRange} options={[{ id: "7", label: "7 dias" }, { id: "30", label: "30 dias" }, { id: "90", label: "90 dias" }]} />
-        {visible.length < 2 ? (
-          <p className="t-small py-6 text-center text-tx2">O gráfico aparece a partir da 2ª pesagem. Pese-se de manhã, em jejum, 2 a 3 vezes por semana.</p>
-        ) : (
-          <div className="h-48" role="img" aria-label="Peso ao longo do tempo">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={visible.map((p) => ({ ...p, label: shortDate(p.date) }))} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
-                <CartesianGrid stroke="var(--c-bd)" vertical={false} />
-                <XAxis dataKey="label" tickLine={false} axisLine={false} tick={TICK} />
-                <YAxis tickLine={false} axisLine={false} domain={[yMin, yMax]} allowDecimals={false} tick={TICK} width={40} />
-                <Tooltip cursor={{ stroke: "var(--c-tx2)", strokeOpacity: 0.4 }} content={<WTip />} />
-                <Line dataKey="kg" stroke="var(--c-blue)" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" dot={{ r: 4, fill: "var(--c-bg)", stroke: "var(--c-blue)", strokeWidth: 2.5 }} activeDot={{ r: 5, fill: "var(--c-blue)" }} isAnimationActive={false} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-      </Card>
+      <Evolution logs={d.logs} todayKey={d.todayKey} />
 
       <Card className="grid gap-2">
         <button onClick={() => push({ id: "calibration" })} className="flex items-center justify-between text-left">
