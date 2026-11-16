@@ -80,9 +80,9 @@ export function WeekScreen() {
             <Icon name="chart" size={30} />
           </span>
           <h2 className="t-t21">Sua semana começa aqui</h2>
-          <p className="t-small text-tx2">Marque as refeições e o treino em Hoje. O resumo da semana, a nota da dieta e o gasto aparecem aqui.</p>
-          <Button size="md" className="mt-1 w-full" onClick={() => setTab("today")}>
-            Ir para Hoje
+          <p className="t-small text-tx2">Marque as refeições na aba Dieta e o treino em Hoje. O resumo da semana, a nota da dieta e o gasto aparecem aqui.</p>
+          <Button size="md" className="mt-1 w-full" onClick={() => setTab("diet")}>
+            Ir para a Dieta
           </Button>
         </Card>
       </Page>

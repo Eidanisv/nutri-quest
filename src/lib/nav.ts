@@ -2,7 +2,7 @@
 
 import { create } from "zustand";
 
-export type Tab = "today" | "shopping" | "week" | "weight" | "profile";
+export type Tab = "today" | "diet" | "shopping" | "week" | "weight" | "profile";
 
 /** Telas empilhadas por cima da aba atual (com botão Voltar). */
 export type Screen =

@@ -154,18 +154,12 @@ export function TodayScreen() {
   const online = useOnline();
   const status = useSync((s) => s.status);
   const addWater = useStore((s) => s.addWater);
-  const setMealChecked = useStore((s) => s.setMealChecked);
-  const skipMeal = useStore((s) => s.skipMeal);
   const { setTab, push, openSheet } = useNav();
 
   const ml = d.log?.waterMl ?? 0;
   const goal = d.user.waterGoalMl;
   const projected = d.get - d.planned.kcal;
   const emptyDiet = d.plan.meals.length === 0;
-  const remainingItems = d.nextMeal?.items.filter((i) => !d.resolved.has(i.id) && d.foods[i.foodId]) ?? [];
-  const nextKcal = d.nextMeal ? d.nextMeal.items.reduce((a, i) => (d.foods[i.foodId] ? a + macrosOf(d.foods[i.foodId], i.quantity).kcal : a), 0) : 0;
-  const completeMeals = d.plan.meals.filter((m) => m.items.length > 0 && m.items.every((i) => d.resolved.has(i.id))).length;
-
   const macros = [
     { n: "Proteína", v: d.consumed.protein, m: d.planned.protein },
     { n: "Carboidrato", v: d.consumed.carbs, m: d.planned.carbs },
@@ -239,6 +233,82 @@ export function TodayScreen() {
             </div>
           </Card>
 
+        </>
+      )}
+
+      {!emptyDiet && <ScoreCard score={d.score} />}
+      <WorkoutCard />
+
+      <Card className="grid gap-3">
+        <button onClick={() => openSheet("water")} className="flex items-end justify-between text-left" aria-label="Abrir registro de água">
+          <div>
+            <p className="t-cap-sb tracking-wide text-tx2 uppercase">Água</p>
+            <p className="t-t28 tnum">
+              {fmt(ml / 1000, 2)} <span className="t-body font-normal text-tx2">de {fmt(goal / 1000, 1)} L</span>
+            </p>
+          </div>
+          <span className={`t-small ${ml >= goal ? "text-ok" : "text-tx2"}`}>{ml >= goal ? "Meta batida" : `faltam ${fmt((goal - ml) / 1000, 2)} L`}</span>
+        </button>
+        <Progress value={ml / goal} tone={ml >= goal ? "ok" : "blue"} h={8} label="Água" />
+        <div className="grid grid-cols-3 gap-2">
+          <Button variant="outline" size="md" className="!px-2" disabled={ml <= 0} onClick={() => { haptic(6); addWater(d.todayKey, -250); }}>
+            −250
+          </Button>
+          <Button variant="outline" size="md" className="!px-2" onClick={() => { haptic(10); addWater(d.todayKey, 250); }}>
+            +250 ml
+          </Button>
+          <Button size="md" className="!px-2" onClick={() => { haptic(14); addWater(d.todayKey, 500); }}>
+            +500 ml
+          </Button>
+        </div>
+      </Card>
+    </Page>
+  );
+}
+
+// ───────────── Aba Dieta: as refeições do dia ─────────────
+
+export function DietTabScreen() {
+  const d = useDay();
+  const setMealChecked = useStore((s) => s.setMealChecked);
+  const skipMeal = useStore((s) => s.skipMeal);
+  const { push } = useNav();
+  const emptyDiet = d.plan.meals.length === 0;
+  const remainingItems = d.nextMeal?.items.filter((i) => !d.resolved.has(i.id) && d.foods[i.foodId]) ?? [];
+  const nextKcal = d.nextMeal ? d.nextMeal.items.reduce((a, i) => (d.foods[i.foodId] ? a + macrosOf(d.foods[i.foodId], i.quantity).kcal : a), 0) : 0;
+  const completeMeals = d.plan.meals.filter((m) => m.items.length > 0 && m.items.every((i) => d.resolved.has(i.id))).length;
+  const sub = emptyDiet
+    ? "Sem refeições ainda"
+    : `${fmt(d.consumed.kcal)} de ${fmt(d.planned.kcal)} kcal · ${d.score === null ? "sem nota ainda" : `nota ${String(d.score.toFixed(1)).replace(".", ",")}`}`;
+
+  return (
+    <Page>
+      <LargeTitle
+        title="Dieta"
+        sub={sub}
+        right={
+          <button onClick={() => push({ id: "diet" })} className="t-body pb-1 text-link active:opacity-60">
+            Editar
+          </button>
+        }
+      />
+
+      {emptyDiet ? (
+        <Card className="flex flex-col items-center gap-3 px-6 py-10 text-center">
+          <span className="grid size-[88px] place-items-center rounded-full bg-blue/10 text-blue">
+            <Icon name="coffee" size={40} sw={1.6} />
+          </span>
+          <h2 className="t-t28">Sua dieta ainda está vazia</h2>
+          <p className="t-body text-tx2">Monte as refeições e os alimentos para marcar o que você come ao longo do dia.</p>
+          <div className="mt-2 grid w-full gap-1">
+            <Button onClick={() => push({ id: "diet" })}>Montar minha dieta</Button>
+            <Button variant="link" disabled title="Em breve">
+              Importar PDF do nutricionista · em breve
+            </Button>
+          </div>
+        </Card>
+      ) : (
+        <>
           {d.nextMeal ? (
             <Card className="grid gap-3">
               <div className="flex items-start justify-between gap-3">
@@ -283,38 +353,6 @@ export function TodayScreen() {
               </div>
             </Card>
           )}
-        </>
-      )}
-
-      {!emptyDiet && <ScoreCard score={d.score} />}
-      <WorkoutCard />
-
-      <Card className="grid gap-3">
-        <button onClick={() => openSheet("water")} className="flex items-end justify-between text-left" aria-label="Abrir registro de água">
-          <div>
-            <p className="t-cap-sb tracking-wide text-tx2 uppercase">Água</p>
-            <p className="t-t28 tnum">
-              {fmt(ml / 1000, 2)} <span className="t-body font-normal text-tx2">de {fmt(goal / 1000, 1)} L</span>
-            </p>
-          </div>
-          <span className={`t-small ${ml >= goal ? "text-ok" : "text-tx2"}`}>{ml >= goal ? "Meta batida" : `faltam ${fmt((goal - ml) / 1000, 2)} L`}</span>
-        </button>
-        <Progress value={ml / goal} tone={ml >= goal ? "ok" : "blue"} h={8} label="Água" />
-        <div className="grid grid-cols-3 gap-2">
-          <Button variant="outline" size="md" className="!px-2" disabled={ml <= 0} onClick={() => { haptic(6); addWater(d.todayKey, -250); }}>
-            −250
-          </Button>
-          <Button variant="outline" size="md" className="!px-2" onClick={() => { haptic(10); addWater(d.todayKey, 250); }}>
-            +250 ml
-          </Button>
-          <Button size="md" className="!px-2" onClick={() => { haptic(14); addWater(d.todayKey, 500); }}>
-            +500 ml
-          </Button>
-        </div>
-      </Card>
-
-      {!emptyDiet && (
-        <>
           <SectionLabel right={`${completeMeals} de ${d.plan.meals.length} completas`}>Refeições</SectionLabel>
           {d.plan.meals.map((m) => (
             <MealCard key={m.id} meal={m} isNext={m.id === d.nextMeal?.id} />
@@ -346,7 +384,7 @@ export function MealDetailScreen({ mealId }: { mealId: string }) {
 
   return (
     <Page tabbar={false}>
-      <NavBar back="Hoje" onBack={pop} right={<button onClick={() => push({ id: "meal-edit", mealId })} className="t-body text-link">Editar</button>} />
+      <NavBar back="Dieta" onBack={pop} right={<button onClick={() => push({ id: "meal-edit", mealId })} className="t-body text-link">Editar</button>} />
       <div>
         <h1 className="t-t28">{meal.name}</h1>
         <p className="t-body text-tx2">

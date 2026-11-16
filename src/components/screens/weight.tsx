@@ -355,7 +355,7 @@ export function CalibrationScreen() {
         ))}
       </Group>
       <p className="t-cap px-1 text-center text-tx2">Vale se você marcar tudo o que come. Marque as refeições todos os dias.</p>
-      <Button variant="outline" onClick={() => setTab("today")}>Marcar refeições de hoje</Button>
+      <Button variant="outline" onClick={() => setTab("diet")}>Marcar refeições de hoje</Button>
     </Page>
   );
 }

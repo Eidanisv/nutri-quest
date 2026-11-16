@@ -15,13 +15,14 @@ import { DietScreen, FoodsScreen, MealEditScreen } from "./screens/diet";
 import { Onboarding } from "./screens/onboarding";
 import { AboutScreen, ActivityScreen, ProfileEditScreen, ProfileScreen, RemindersScreen } from "./screens/profile";
 import { ShoppingScreen } from "./screens/shopping";
-import { MealDetailScreen, TodayScreen, WaterSheet } from "./screens/today";
+import { DietTabScreen, MealDetailScreen, TodayScreen, WaterSheet } from "./screens/today";
 import { CalibrationScreen, WeightScreen, WeightSheet } from "./screens/weight";
 import { WorkoutSheet } from "./screens/workout";
 import { WeekScreen } from "./screens/week";
 
 const TABS: { id: Tab; label: string; icon: IconName }[] = [
   { id: "today", label: "Hoje", icon: "home" },
+  { id: "diet", label: "Dieta", icon: "utensils" },
   { id: "shopping", label: "Compras", icon: "bag" },
   { id: "week", label: "Semana", icon: "chart" },
   { id: "weight", label: "Peso", icon: "trend" },
@@ -51,6 +52,8 @@ function TabScreen({ tab }: { tab: Tab }) {
   switch (tab) {
     case "today":
       return <TodayScreen />;
+    case "diet":
+      return <DietTabScreen />;
     case "shopping":
       return <ShoppingScreen />;
     case "week":
