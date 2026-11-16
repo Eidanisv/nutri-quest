@@ -26,7 +26,12 @@ interface State extends AppData {
   toggleShopping: (week: string, foodId: string) => void;
   clearShopping: (week: string) => void;
   /** Marca (ou desmarca) todos os itens de uma refeição de uma vez. */
+  /** checked=true marca como comido o que ainda falta (itens "não comi" ficam como estão); false limpa tudo da refeição. */
   setMealChecked: (date: string, mealId: string, checked: boolean) => void;
+  /** Alterna "não comi" em um item (desmarca o "comi" dele). */
+  toggleSkipped: (date: string, itemId: string) => void;
+  /** Marca como "não comi" todos os itens da refeição que ainda não foram decididos. */
+  skipMeal: (date: string, mealId: string) => void;
   updateUser: (patch: Partial<User>) => void;
 
   // Editor de dieta
@@ -114,6 +119,7 @@ export const useStore = create<State>()(
               [date]: {
                 ...log,
                 checkedItemIds: checked,
+                skippedItemIds: (log.skippedItemIds ?? []).filter((i) => i !== itemId),
                 consumed: consumedTotals(s.plan, foodMap(s.foods), checked),
                 getKcal: calcGet(s.user),
               },
@@ -166,17 +172,56 @@ export const useStore = create<State>()(
           if (!meal) return {};
           const log = blankLog(s, date);
           const ids = new Set(meal.items.map((i) => i.id));
+          const skipped = log.skippedItemIds ?? [];
           const rest = log.checkedItemIds.filter((i) => !ids.has(i));
-          const next = checked ? [...rest, ...ids] : rest;
+          // marcar: o que já estava comido continua; o que falta vira comido; "não comi" é respeitado
+          const next = checked ? [...new Set([...log.checkedItemIds, ...[...ids].filter((i) => !skipped.includes(i))])] : rest;
           return {
             logs: {
               ...s.logs,
               [date]: {
                 ...log,
                 checkedItemIds: next,
+                skippedItemIds: checked ? skipped : skipped.filter((i) => !ids.has(i)),
                 consumed: consumedTotals(s.plan, foodMap(s.foods), next),
                 getKcal: calcGet(s.user),
               },
+            },
+          };
+        }),
+
+      toggleSkipped: (date, itemId) =>
+        set((s) => {
+          const log = blankLog(s, date);
+          const skipped = log.skippedItemIds ?? [];
+          const isSkipped = skipped.includes(itemId);
+          const nextSkipped = isSkipped ? skipped.filter((i) => i !== itemId) : [...skipped, itemId];
+          const checked = log.checkedItemIds.filter((i) => i !== itemId);
+          return {
+            logs: {
+              ...s.logs,
+              [date]: {
+                ...log,
+                checkedItemIds: checked,
+                skippedItemIds: nextSkipped,
+                consumed: consumedTotals(s.plan, foodMap(s.foods), checked),
+                getKcal: calcGet(s.user),
+              },
+            },
+          };
+        }),
+
+      skipMeal: (date, mealId) =>
+        set((s) => {
+          const meal = s.plan.meals.find((m) => m.id === mealId);
+          if (!meal) return {};
+          const log = blankLog(s, date);
+          const done = new Set([...log.checkedItemIds, ...(log.skippedItemIds ?? [])]);
+          const add = meal.items.map((i) => i.id).filter((i) => !done.has(i));
+          return {
+            logs: {
+              ...s.logs,
+              [date]: { ...log, skippedItemIds: [...(log.skippedItemIds ?? []), ...add], getKcal: calcGet(s.user) },
             },
           };
         }),

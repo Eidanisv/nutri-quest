@@ -49,7 +49,7 @@ export function useReminders(enabled: boolean) {
       const fired = firedSet(day);
       const s = useStore.getState();
       const log = s.logs[day];
-      const checked = new Set(log?.checkedItemIds ?? []);
+      const checked = new Set([...(log?.checkedItemIds ?? []), ...(log?.skippedItemIds ?? [])]);
       let changed = false;
       const once = (k: string, title: string, body: string) => {
         if (fired.has(k)) return;

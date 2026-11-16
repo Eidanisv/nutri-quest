@@ -101,6 +101,8 @@ export interface DailyLog {
   mealPlanId: string;
   /** ids dos PlanItem marcados como consumidos */
   checkedItemIds: string[];
+  /** ids dos PlanItem que a pessoa marcou como "não comi" (não contam como consumidos nem como pendentes) */
+  skippedItemIds?: string[];
   waterMl: number;
   /** Pesagem do dia (jejum), se houver. */
   weightKg?: number;

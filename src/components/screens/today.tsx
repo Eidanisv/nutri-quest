@@ -33,25 +33,43 @@ export function FoodRow({
   note,
   kcal,
   on,
+  skipped = false,
   onToggle,
+  onSkip,
 }: {
   name: string;
   meta: string;
   note?: string;
   kcal: number;
   on: boolean;
+  skipped?: boolean;
   onToggle: () => void;
+  onSkip?: () => void;
 }) {
   return (
-    <button onClick={onToggle} aria-pressed={on} className="flex w-full items-center gap-3.5 px-4 py-3 text-left active:bg-sup">
-      <Check on={on} />
-      <span className="min-w-0 flex-1">
-        <span className={`t-body block ${on ? "text-tx2" : ""}`}>{name}</span>
-        <span className="t-small block text-tx2">{meta}</span>
-        {note && <span className="t-cap mt-0.5 block text-link">↔ {note}</span>}
-      </span>
-      <span className="t-small tnum text-tx2">{fmt(kcal)}</span>
-    </button>
+    <div className="flex items-stretch">
+      <button onClick={onToggle} aria-pressed={on} aria-label={`${name}: comi`} className="flex min-w-0 flex-1 items-center gap-3.5 py-3 pr-2 pl-4 text-left active:bg-sup">
+        <Check on={on} />
+        <span className="min-w-0 flex-1">
+          <span className={`t-body block ${on || skipped ? "text-tx2" : ""} ${skipped ? "line-through" : ""}`}>{name}</span>
+          <span className="t-small block text-tx2">{skipped ? "Não comi" : meta}</span>
+          {note && !skipped && <span className="t-cap mt-0.5 block text-link">↔ {note}</span>}
+        </span>
+        <span className={`t-small tnum text-tx2 ${skipped ? "line-through" : ""}`}>{fmt(kcal)}</span>
+      </button>
+      {onSkip && (
+        <button
+          onClick={onSkip}
+          aria-pressed={skipped}
+          aria-label={`${name}: não comi`}
+          className="grid w-12 shrink-0 place-items-center active:bg-sup"
+        >
+          <span className={`grid size-[26px] place-items-center rounded-full border-2 ${skipped ? "border-err bg-err text-white" : "border-bd text-tx2"}`}>
+            <Icon name="x" size={14} sw={3} />
+          </span>
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -61,12 +79,15 @@ const itemMeta = (qty: string, m: { protein: number; carbs: number; fat: number 
 function MealCard({ meal, isNext }: { meal: Meal; isNext: boolean }) {
   const d = useDay();
   const toggle = useStore((s) => s.toggleItem);
+  const skip = useStore((s) => s.toggleSkipped);
   const push = useNav((s) => s.push);
   const rows = meal.items.map((it) => ({ it, food: d.foods[it.foodId], m: macrosOf(d.foods[it.foodId], it.quantity) })).filter((r) => r.food);
   const planned = rows.reduce((a, r) => a + r.m.kcal, 0);
   const eaten = rows.filter((r) => d.checked.has(r.it.id));
   const eatenKcal = eaten.reduce((a, r) => a + r.m.kcal, 0);
-  const done = rows.length > 0 && eaten.length === rows.length;
+  const skippedN = rows.filter((r) => d.skipped.has(r.it.id) && !d.checked.has(r.it.id)).length;
+  const pending = rows.length - eaten.length - skippedN;
+  const done = rows.length > 0 && pending === 0;
   // Refeição já completa ao abrir começa recolhida: o caminho comum (marcar o que falta) fica no topo.
   const [open, setOpen] = useState(!done);
 
@@ -79,7 +100,7 @@ function MealCard({ meal, isNext }: { meal: Meal; isNext: boolean }) {
             {isNext && <Chip>Próxima</Chip>}
           </span>
           <span className={`t-small block ${done ? "text-ok" : "text-tx2"}`}>
-            {meal.time} · {rows.length === 0 ? "sem itens" : done ? "completa" : `faltam ${rows.length - eaten.length} de ${rows.length}`}
+            {meal.time} · {rows.length === 0 ? "sem itens" : done ? (skippedN > 0 ? `completa · ${skippedN} não comi` : "completa") : `faltam ${pending} de ${rows.length}`}
           </span>
         </span>
         <span className="flex shrink-0 items-center gap-2">
@@ -105,9 +126,14 @@ function MealCard({ meal, isNext }: { meal: Meal; isNext: boolean }) {
                 note={it.note}
                 kcal={m.kcal}
                 on={d.checked.has(it.id)}
+                skipped={d.skipped.has(it.id)}
                 onToggle={() => {
                   haptic(d.checked.has(it.id) ? 6 : 12);
                   toggle(d.todayKey, it.id);
+                }}
+                onSkip={() => {
+                  haptic(8);
+                  skip(d.todayKey, it.id);
                 }}
               />
             </div>
@@ -128,15 +154,16 @@ export function TodayScreen() {
   const status = useSync((s) => s.status);
   const addWater = useStore((s) => s.addWater);
   const setMealChecked = useStore((s) => s.setMealChecked);
+  const skipMeal = useStore((s) => s.skipMeal);
   const { setTab, push, openSheet } = useNav();
 
   const ml = d.log?.waterMl ?? 0;
   const goal = d.user.waterGoalMl;
   const projected = d.get - d.planned.kcal;
   const emptyDiet = d.plan.meals.length === 0;
-  const remainingItems = d.nextMeal?.items.filter((i) => !d.checked.has(i.id) && d.foods[i.foodId]) ?? [];
+  const remainingItems = d.nextMeal?.items.filter((i) => !d.resolved.has(i.id) && d.foods[i.foodId]) ?? [];
   const nextKcal = d.nextMeal ? d.nextMeal.items.reduce((a, i) => (d.foods[i.foodId] ? a + macrosOf(d.foods[i.foodId], i.quantity).kcal : a), 0) : 0;
-  const completeMeals = d.plan.meals.filter((m) => m.items.length > 0 && m.items.every((i) => d.checked.has(i.id))).length;
+  const completeMeals = d.plan.meals.filter((m) => m.items.length > 0 && m.items.every((i) => d.resolved.has(i.id))).length;
 
   const macros = [
     { n: "Proteína", v: d.consumed.protein, m: d.planned.protein },
@@ -231,7 +258,17 @@ export function TodayScreen() {
                   setMealChecked(d.todayKey, d.nextMeal!.id, true);
                 }}
               >
-                Marcar tudo como comido
+                {remainingItems.length === d.nextMeal.items.length ? "Marcar tudo como comido" : "Marcar o que falta como comido"}
+              </Button>
+              <Button
+                size="md"
+                variant="outline"
+                onClick={() => {
+                  haptic(8);
+                  skipMeal(d.todayKey, d.nextMeal!.id);
+                }}
+              >
+                {remainingItems.length === d.nextMeal.items.length ? "Não comi esta refeição" : "Não comi o que falta"}
               </Button>
             </Card>
           ) : (
@@ -291,13 +328,16 @@ export function MealDetailScreen({ mealId }: { mealId: string }) {
   const pop = useNav((s) => s.pop);
   const push = useNav((s) => s.push);
   const toggle = useStore((s) => s.toggleItem);
+  const skip = useStore((s) => s.toggleSkipped);
+  const skipMeal = useStore((s) => s.skipMeal);
   const setMealChecked = useStore((s) => s.setMealChecked);
   const meal = d.plan.meals.find((m) => m.id === mealId);
   if (!meal) return null;
 
   const rows = meal.items.map((it) => ({ it, food: d.foods[it.foodId], m: macrosOf(d.foods[it.foodId], it.quantity) })).filter((r) => r.food);
   const tot = rows.reduce((a, r) => ({ kcal: a.kcal + r.m.kcal, p: a.p + r.m.protein, c: a.c + r.m.carbs, g: a.g + r.m.fat }), { kcal: 0, p: 0, c: 0, g: 0 });
-  const left = rows.filter((r) => !d.checked.has(r.it.id)).length;
+  const left = rows.filter((r) => !d.resolved.has(r.it.id)).length;
+  const skippedN = rows.filter((r) => d.skipped.has(r.it.id) && !d.checked.has(r.it.id)).length;
   const notes = rows.filter((r) => r.it.note);
 
   return (
@@ -306,7 +346,7 @@ export function MealDetailScreen({ mealId }: { mealId: string }) {
       <div>
         <h1 className="t-t28">{meal.name}</h1>
         <p className="t-body text-tx2">
-          {meal.time} · {left === 0 ? "completa" : `faltam ${left} de ${rows.length} itens`}
+          {meal.time} · {left === 0 ? (skippedN > 0 ? `completa · ${skippedN} não comi` : "completa") : `faltam ${left} de ${rows.length} itens`}
         </p>
       </div>
       <div className="flex flex-wrap gap-2">
@@ -317,7 +357,7 @@ export function MealDetailScreen({ mealId }: { mealId: string }) {
       <div className="overflow-hidden rounded-xl bg-bg">
         {rows.map(({ it, food, m }, i) => (
           <div key={it.id} className={i ? "border-t border-bd" : ""}>
-            <FoodRow name={food.name} meta={itemMeta(formatQty(it.quantity, food.unit), m)} kcal={m.kcal} on={d.checked.has(it.id)} onToggle={() => { haptic(10); toggle(d.todayKey, it.id); }} />
+            <FoodRow name={food.name} meta={itemMeta(formatQty(it.quantity, food.unit), m)} kcal={m.kcal} on={d.checked.has(it.id)} skipped={d.skipped.has(it.id)} onToggle={() => { haptic(10); toggle(d.todayKey, it.id); }} onSkip={() => { haptic(8); skip(d.todayKey, it.id); }} />
           </div>
         ))}
         {rows.length === 0 && <p className="t-small p-4 text-center text-tx2">Esta refeição ainda não tem alimentos.</p>}
@@ -334,7 +374,10 @@ export function MealDetailScreen({ mealId }: { mealId: string }) {
       )}
       <div className="grid gap-1 pt-2">
         {left > 0 ? (
-          <Button onClick={() => { haptic(14); setMealChecked(d.todayKey, mealId, true); }}>Marcar refeição completa</Button>
+          <>
+            <Button onClick={() => { haptic(14); setMealChecked(d.todayKey, mealId, true); }}>{left === rows.length ? "Marcar refeição completa" : "Marcar o que falta como comido"}</Button>
+            <Button variant="outline" onClick={() => { haptic(8); skipMeal(d.todayKey, mealId); }}>{left === rows.length ? "Não comi esta refeição" : "Não comi o que falta"}</Button>
+          </>
         ) : (
           <Button variant="outline" onClick={() => setMealChecked(d.todayKey, mealId, false)}>Desmarcar a refeição</Button>
         )}

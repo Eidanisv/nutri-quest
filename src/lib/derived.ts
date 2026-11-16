@@ -51,12 +51,16 @@ export function useDay() {
   const log = logs[todayKey];
   const checkedIds = log?.checkedItemIds;
   const checked = useMemo(() => new Set(checkedIds ?? []), [checkedIds]);
+  const skippedIds = log?.skippedItemIds;
+  const skipped = useMemo(() => new Set(skippedIds ?? []), [skippedIds]);
+  /** item decidido = comi ou não comi */
+  const resolved = useMemo(() => new Set([...(checkedIds ?? []), ...(skippedIds ?? [])]), [checkedIds, skippedIds]);
   const planned = useMemo(() => planTotals(plan, foods), [plan, foods]);
   const consumed = useMemo(() => consumedTotals(plan, foods, checkedIds ?? []), [plan, foods, checkedIds]);
   const get = calcGet(user);
   const bmr = calcBmr(user);
-  const nextMeal = plan.meals.find((m) => m.items.some((i) => !checked.has(i.id)));
-  return { user, plan, logs, foods, today, todayKey, log, checked, planned, consumed, get, bmr, nextMeal };
+  const nextMeal = plan.meals.find((m) => m.items.some((i) => !resolved.has(i.id)));
+  return { user, plan, logs, foods, today, todayKey, log, checked, skipped, resolved, planned, consumed, get, bmr, nextMeal };
 }
 
 export const dateLabel = (d: Date) =>
