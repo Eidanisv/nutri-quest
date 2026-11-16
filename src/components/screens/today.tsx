@@ -92,7 +92,7 @@ const itemMeta = (qty: string, m: { protein: number; carbs: number; fat: number 
 /** Nome, detalhe e kcal de uma linha: o que foi comido de verdade, se houve troca, ou o previsto. */
 function rowView(sw: Swap | undefined, food: FoodItem, qty: number, m: Macros) {
   return sw
-    ? { name: sw.name, meta: `no lugar de ${food.name}`, kcal: sw.macros.kcal }
+    ? { name: sw.name, meta: `${sw.detail ? `${sw.detail} · ` : ""}no lugar de ${food.name}`, kcal: sw.macros.kcal }
     : { name: food.name, meta: itemMeta(formatQty(qty, food.unit), m), kcal: m.kcal };
 }
 

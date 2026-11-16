@@ -102,6 +102,8 @@ export interface Swap {
   macros: Macros;
   foodId?: string;
   quantity?: number;
+  /** Quantidade em texto, quando vem da lista de equivalentes (ex.: "1 unidade · 50 g"). */
+  detail?: string;
 }
 
 /** Treino do dia: só musculação, ou musculação + cardio (30 a 40 min). Ausente = não treinou. */
