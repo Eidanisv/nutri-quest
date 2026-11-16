@@ -12,10 +12,12 @@ import { Banner, Button, Card, Choice, Icon, Progress, Sheet } from "../kit";
 
 const f1 = (n: number) => String(n.toFixed(1)).replace(".", ",");
 
-/** Nota da dieta do dia (1 a 10), calculada a partir do que foi marcado. */
-export function ScoreCard({ score }: { score: number | null }) {
-  const tone = score === null ? null : scoreTone(score);
-  const color = tone === "ok" ? "text-ok" : tone === "warn" ? "text-warn" : tone === "err" ? "text-err" : "text-tx2";
+/** Nota da dieta do dia (1 a 10): considera o dia inteiro, então sobe conforme as refeições vão sendo feitas. */
+export function ScoreCard({ score, soFar, inProgress }: { score: number | null; soFar: number | null; inProgress: boolean }) {
+  // Enquanto faltam refeições, a nota ainda vai subir: não dá veredito nem cor de alerta.
+  const tone = score === null || inProgress ? null : scoreTone(score);
+  const color = tone === "ok" ? "text-ok" : tone === "warn" ? "text-warn" : tone === "err" ? "text-err" : "text-tx";
+  const showSoFar = inProgress && score !== null && soFar !== null && Math.abs(soFar - score) >= 0.1;
   return (
     <Card className="grid gap-2.5">
       <div className="flex items-end justify-between gap-3">
@@ -25,13 +27,15 @@ export function ScoreCard({ score }: { score: number | null }) {
             {score === null ? "—" : <span className={color}>{f1(score)}</span>} <span className="t-body font-normal text-tx2">de 10</span>
           </p>
         </div>
-        <span className={`t-small-sb ${color}`}>{score === null ? "Sem marcação" : scoreLabel(score)}</span>
+        <span className={`t-small-sb ${tone ? color : "text-tx2"}`}>{score === null ? "Sem marcação" : inProgress ? "Dia em andamento" : scoreLabel(score)}</span>
       </div>
       <Progress value={score === null ? 0 : (score - 1) / 9} tone={tone === "err" ? "err" : tone === "ok" ? "ok" : "blue"} h={6} label="Nota da dieta" />
       <p className="t-cap text-tx2">
         {score === null
-          ? "Marque o que você comeu e a nota aparece. 10 é comer tudo o que está no plano."
-          : "Calculada pelo que você marcou: metade vem das calorias comidas e metade dos itens do plano."}
+          ? "Marque o que você comeu e a nota aparece. 10 é comer tudo o que está no plano do dia."
+          : inProgress
+            ? `A nota conta o dia inteiro e sobe conforme você faz as refeições.${showSoFar ? ` Só nas refeições que já passaram do horário: ${f1(soFar!)}.` : ""}`
+            : "Calculada pelo que você marcou: metade vem das calorias comidas e metade dos itens do plano."}
       </p>
     </Card>
   );

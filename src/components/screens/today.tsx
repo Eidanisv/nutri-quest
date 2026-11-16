@@ -236,7 +236,7 @@ export function TodayScreen() {
         </>
       )}
 
-      {!emptyDiet && <ScoreCard score={d.score} />}
+      {!emptyDiet && <ScoreCard score={d.score} soFar={d.scoreSoFar} inProgress={!!d.nextMeal} />}
       <WorkoutCard />
 
       <Card className="grid gap-3">

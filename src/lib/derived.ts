@@ -61,14 +61,16 @@ export function useDay() {
   const get = calcDayGet(user, workout);
   const baseGet = calcDayBase(user);
   const trainKcal = workoutKcal(workout, user.weightKg);
-  // Nota de hoje até agora: só entram as refeições que já passaram do horário ou já foram marcadas.
-  const score = useMemo(() => {
+  // Nota do dia inteiro: refeição que ainda não chegou conta como não comida, então a nota sobe ao longo do dia.
+  const score = useMemo(() => dietScore(plan, foods, checkedIds, skippedIds), [plan, foods, checkedIds, skippedIds]);
+  // Nota "até agora": só as refeições cujo horário já passou (ou que já têm marcação).
+  const scoreSoFar = useMemo(() => {
     const now = new Date();
     return dietScore(plan, foods, checkedIds, skippedIds, now.getHours() * 60 + now.getMinutes());
   }, [plan, foods, checkedIds, skippedIds]);
   const bmr = calcBmr(user);
   const nextMeal = plan.meals.find((m) => m.items.some((i) => !resolved.has(i.id)));
-  return { user, plan, logs, foods, today, todayKey, log, checked, skipped, resolved, planned, consumed, get, baseGet, trainKcal, workout, score, bmr, nextMeal };
+  return { user, plan, logs, foods, today, todayKey, log, checked, skipped, resolved, planned, consumed, get, baseGet, trainKcal, workout, score, scoreSoFar, bmr, nextMeal };
 }
 
 export const dateLabel = (d: Date) =>

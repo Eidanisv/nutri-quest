@@ -59,7 +59,8 @@ export function WeekScreen() {
   const kg = Math.abs(week.closedBalance) / KCAL_PER_KG;
   const trained = points.filter((p) => p.workout);
   const trainKcal = trained.reduce((a, p) => a + workoutKcal(p.workout, d.user.weightKg), 0);
-  const scored = points.filter((p) => p.score !== null);
+  // a média só conta dias fechados: o dia de hoje ainda vai subir
+  const scored = points.filter((p) => p.score !== null && !p.isToday);
   const avgScore = scored.length ? scored.reduce((a, p) => a + (p.score as number), 0) / scored.length : null;
   const hasAny = points.some((p) => p.consumed !== null || p.workout);
 
@@ -135,7 +136,7 @@ export function WeekScreen() {
         <div className="flex items-center justify-between gap-2">
           <h2 className="t-t21">Nota da dieta</h2>
           <span className={`t-small-sb tnum ${avgScore === null ? "text-tx2" : { ok: "text-ok", warn: "text-warn", err: "text-err" }[scoreTone(avgScore)]}`}>
-            {avgScore === null ? "—" : `média ${f1(avgScore)} de 10`}
+            {avgScore === null ? "—" : `média ${f1(avgScore)} de 10 (dias fechados)`}
           </span>
         </div>
         <div className="grid grid-cols-7">
